@@ -1,26 +1,260 @@
 {% extends "base.html" %}
 
-{% block title %}Company Payrolls{% endblock %}
+{% block title %}{{ company.name }} - Team Roster & Cap Space{% endblock %}
 
 {% block content %}
-    <h1>Company Payrolls</h1>
-    <p>Total C-Suite & Board compensation spending by company.</p>
-    <table>
-        <thead>
-            <tr>
-                <th>Company</th>
-                <th>Ticker</th>
-                <th>Total Executive Payroll</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for company in companies %}
-            <tr>
-                <td><a href="{{ url_for('company_detail', company_id=company.id) }}">{{ company.name }}</a></td>
-                <td>{{ company.ticker }}</td>
-                <td>${{ "{:,.0f}".format(company.total_payroll) }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem;">
+        <div class="company-logo" style="width: 60px; height: 60px; font-size: 1.5rem;">
+            {{ company.ticker[:2] }}
+        </div>
+        <div>
+            <h1 style="margin: 0;">{{ company.name }}</h1>
+            <p style="margin: 0; font-size: 1.1rem;">{{ company.ticker }} • {{ company.sector }} • Founded {{ company.founded }}</p>
+        </div>
+    </div>
+
+    <!-- Cap Space Overview -->
+    <div class="cap-overview">
+        <div class="cap-card">
+            <h3 style="color: #10b981; margin-top: 0;">💰 Salary Cap Situation</h3>
+            <div class="cap-usage">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <span>Budget Utilization</span>
+                    <span class="{% if cap_info.utilization_pct > 100 %}salary-amount{% else %}cap-hit{% endif %}">
+                        {{ "{:.1f}".format(cap_info.utilization_pct) }}%
+                    </span>
+                </div>
+                <div class="cap-bar">
+                    <div class="cap-fill {% if cap_info.utilization_pct > 100 %}over-budget{% endif %}"
+                         style="width: {{ [cap_info.utilization_pct, 100]|min }}%"></div>
+                </div>
+            </div>
+
+            <div class="cap-stats">
+                <div class="stat-item">
+                    <div class="stat-label">Total Budget</div>
+                    <div class="stat-value">${{ "{:,.0f}".format(cap_info.budget) }}</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Currently Spent</div>
+                    <div class="stat-value">${{ "{:,.0f}".format(cap_info.total_spent) }}</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Cap Space</div>
+                    <div class="stat-value" style="color: {% if cap_info.remaining < 0 %}#ef4444{% else %}#10b981{% endif %}">
+                        {% if cap_info.remaining < 0 %}
+                            -${{ "{:,.0f}".format(abs(cap_info.remaining)) }}
+                        {% else %}
+                            ${{ "{:,.0f}".format(cap_info.remaining) }}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Total Roster</div>
+                    <div class="stat-value">{{ all_executives|length }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="cap-card">
+            <h3 style="color: #3b82f6; margin-top: 0;">📈 Company Metrics</h3>
+            <div class="cap-stats">
+                <div class="stat-item">
+                    <div class="stat-label">Market Cap</div>
+                    <div class="stat-value">${{ "{:.1f}".format(company.market_cap / 1000000000) }}B</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Annual Revenue</div>
+                    <div class="stat-value">${{ "{:.1f}".format(company.revenue / 1000000000) }}B</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Exec % of Revenue</div>
+                    <div class="stat-value">{{ "{:.2f}".format((cap_info.total_spent / company.revenue) * 100) }}%</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Founded</div>
+                    <div class="stat-value">{{ company.founded }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Compensation Chart -->
+    <div class="chart-container">
+        <h3 style="margin-top: 0;">Executive Compensation Breakdown</h3>
+        <canvas id="compensationChart"></canvas>
+    </div>
+
+    <!-- C-Suite Roster -->
+    {% if c_suite %}
+    <div class="roster-section">
+        <div class="position-header">
+            🎯 C-Suite Executives ({{ c_suite|length }})
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Executive</th>
+                    <th>Position</th>
+                    <th>Age/Exp</th>
+                    <th>Contract</th>
+                    <th>Base Salary</th>
+                    <th>Bonus</th>
+                    <th>Stock Awards</th>
+                    <th>Signing Bonus</th>
+                    <th>Total Comp</th>
+                    <th>Cap Hit %</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exec in c_suite %}
+                <tr>
+                    <td>
+                        <a href="{{ url_for('person_detail', person_id=exec.person_id) }}">
+                            <strong>{{ exec.name }}</strong>
+                        </a>
+                    </td>
+                    <td>{{ exec.title }}</td>
+                    <td>
+                        <small style="color: #94a3b8;">
+                            {{ exec.age }}y • {{ exec.experience }}y exp
+                        </small>
+                    </td>
+                    <td>
+                        <small style="color: #94a3b8;">
+                            {{ exec.contract_years }} years
+                        </small>
+                    </td>
+                    <td class="salary-amount">${{ "{:,.0f}".format(exec.base_salary) }}</td>
+                    <td class="salary-amount">${{ "{:,.0f}".format(exec.bonus) }}</td>
+                    <td class="cap-hit">${{ "{:,.0f}".format(exec.stock_awards) }}</td>
+                    <td class="salary-amount">
+                        {% if exec.signing_bonus > 0 %}
+                            ${{ "{:,.0f}".format(exec.signing_bonus) }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="salary-amount"><strong>${{ "{:,.0f}".format(exec.total_compensation) }}</strong></td>
+                    <td class="cap-hit">{{ "{:.1f}".format(exec.cap_hit_pct) }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Board Members -->
+    {% if board_members %}
+    <div class="roster-section">
+        <div class="position-header" style="background: linear-gradient(90deg, #3b82f6, #1d4ed8);">
+            🏛️ Board of Directors ({{ board_members|length }})
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Board Member</th>
+                    <th>Position</th>
+                    <th>Age/Exp</th>
+                    <th>Contract</th>
+                    <th>Base Salary</th>
+                    <th>Stock Awards</th>
+                    <th>Total Comp</th>
+                    <th>Cap Hit %</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for member in board_members %}
+                <tr>
+                    <td>
+                        <a href="{{ url_for('person_detail', person_id=member.person_id) }}">
+                            <strong>{{ member.name }}</strong>
+                        </a>
+                    </td>
+                    <td>{{ member.title }}</td>
+                    <td>
+                        <small style="color: #94a3b8;">
+                            {{ member.age }}y • {{ member.experience }}y exp
+                        </small>
+                    </td>
+                    <td>
+                        <small style="color: #94a3b8;">
+                            {{ member.contract_years }} years
+                        </small>
+                    </td>
+                    <td class="salary-amount">${{ "{:,.0f}".format(member.base_salary) }}</td>
+                    <td class="cap-hit">${{ "{:,.0f}".format(member.stock_awards) }}</td>
+                    <td class="salary-amount"><strong>${{ "{:,.0f}".format(member.total_compensation) }}</strong></td>
+                    <td class="cap-hit">{{ "{:.1f}".format(member.cap_hit_pct) }}%</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <script>
+        // Chart.js implementation for compensation visualization
+        const ctx = document.getElementById('compensationChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: {{ chart_labels|safe }},
+                datasets: [{
+                    label: 'Total Compensation',
+                    data: {{ chart_data|safe }},
+                    backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                    borderColor: 'rgba(16, 185, 129, 1)',
+                    borderWidth: 2,
+                    borderRadius: 4,
+                    borderSkipped: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#e2e8f0'
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                        titleColor: '#f1f5f9',
+                        bodyColor: '#e2e8f0',
+                        borderColor: 'rgba(16, 185, 129, 1)',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: function(context) {
+                                return 'Total Compensation: $' + context.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: '#94a3b8'
+                        },
+                        grid: {
+                            color: 'rgba(148, 163, 184, 0.1)'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#94a3b8',
+                            callback: function(value) {
+                                return '$' + (value / 1000000).toFixed(1) + 'M';
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(148, 163, 184, 0.1)'
+                        }
+                    }
+                }
+            }
+        });
+    </script>
 {% endblock %}

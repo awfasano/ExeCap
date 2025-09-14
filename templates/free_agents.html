@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Free Agent Executives | Available Talent{% endblock %}
+
+{% block content %}
+    <h1>🎯 Available Executives (Free Agents)</h1>
+    <p>Top executive talent currently available for hire - not under contract with any team</p>
+
+    <div class="stats-container">
+        <div class="stat-card">
+            <span class="stat-title">Available Executives</span>
+            <span class="stat-value">{{ free_agents|length }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-title">Avg Last Compensation</span>
+            <span class="stat-value">
+                {% if free_agents %}
+                    ${{ "{:,.0f}".format((free_agents|sum(attribute='last_compensation')) / free_agents|length) }}
+                {% else %}
+                    $0
+                {% endif %}
+            </span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-title">Total Experience</span>
+            <span class="stat-value">
+                {% if free_agents %}
+                    {{ (free_agents|sum(attribute='experience')) }} years
+                {% else %}
+                    0 years
+                {% endif %}
+            </span>
+        </div>
+    </div>
+
+    {% if free_agents %}
+        {% for agent in free_agents %}
+        <div class="free-agent-card">
+            <div class="free-agent-header">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 50px; height: 50px; background: linear-gradient(45deg, #10b981, #3b82f6); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: bold; color: white;">
+                        {{ agent.name.split()[0][0] }}{{ agent.name.split()[-1][0] }}
+                    </div>
+                    <div>
+                        <div class="free-agent-name">
+                            <a href="{{ url_for('person_detail', person_id=agent.person_id) }}" style="color: #f1f5f9; text-decoration: none;">
+                                {{ agent.name }}
+                            </a>
+                        </div>
+                        <div style="color: #94a3b8; font-size: 0.9rem;">
+                            {{ agent.age }} years old • {{ agent.experience }} years experience
+                        </div>
+                    </div>
+                </div>
+                <div class="free-agent-value">
+                    Last: ${{ "{:,.0f}".format(agent.last_compensation) }}
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2rem; margin-top: 1rem;">
+                <div>
+                    <h4 style="color: #10b981; margin: 0 0 0.5rem 0;">📚 Education</h4>
+                    <p style="margin: 0; color: #e2e8f0;">{{ agent.education }}</p>
+                </div>
+                
+                <div>
+                    <h4 style="color: #3b82f6; margin: 0 0 0.5rem 0;">💼 Last Position</h4>
+                    <p style="margin: 0; color: #e2e8f0;">{{ agent.last_title }}</p>
+                </div>
+                
+                <div>
+                    <h4 style="color: #f59e0b; margin: 0 0 0.5rem 0;">🏢 Previous Companies</h4>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        {% for company in agent.previous_companies %}
+                        <span style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600; border: 1px solid rgba(245, 158, 11, 0.3);">
+                            {{ company }}
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #475569; display: flex; justify-content: space-between; align-items: center;">
+                <div style="color: #94a3b8; font-size: 0.9rem;">
+                    <strong>Market Value Estimate:</strong> Based on experience and last compensation
+                </div>
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <span style="color: #94a3b8;">Estimated Range:</span>
+                    <span class="salary-amount">
+                        ${{ "{:,.0f}".format(agent.last_compensation * 0.8) }} - ${{ "{:,.0f}".format(agent.last_compensation * 1.2) }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div style="text-align: center; padding: 3rem; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border-radius: 12px; border: 1px solid #475569;">
+            <h3 style="color: #94a3b8; margin-bottom: 1rem;">🔍 No Free Agents Available</h3>
+            <p style="color: #94a3b8; margin: 0;">All top executives are currently under contract with teams. Check back later for new available talent.</p>
+        </div>
+    {% endif %}
+
+    <div style="margin-top: 2rem; padding: 1rem; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border-radius: 8px; border: 1px solid #475569;">
+        <h3 style="color: #10b981; margin-top: 0;">💡 Free Agency Explained</h3>
+        <p style="color: #94a3b8; margin-bottom: 0;">
+            <strong>Free Agent Executives:</strong> High-level executives not currently under contract with any company.<br>
+            <strong>Market Value:</strong> Estimated compensation range based on experience, education, and previous roles.<br>
+            <strong>Availability:</strong> These executives are available for immediate hire, subject to cap space availability.
+        </p>
+    </div>
+{% endblock %}

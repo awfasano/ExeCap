@@ -1,21 +1,38 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Executive Pay Tracker{% endblock %}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <!-- Chart.js for data visualization -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body>
-    <nav>
-        <a href="{{ url_for('index') }}" class="nav-brand">ExecuTrack 💵</a>
-        <a href="{{ url_for('company_list') }}">Company Payrolls</a>
-    </nav>
-    <main>
-        {% block content %}{% endblock %}
-    </main>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}Dashboard | Executive Pay Tracker{% endblock %}
+
+{% block content %}
+    <h1>Executive Compensation Dashboard</h1>
+    <p>An overview of the top executive earners and company spending.</p>
+
+    <div class="dashboard-grid">
+        <div class="dashboard-card">
+            <h3>Top 5 Highest Paid Roles (2024)</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Executive</th>
+                        <th>Role</th>
+                        <th>Total Compensation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for earner in top_earners %}
+                    <tr>
+                        <td><a href="{{ url_for('person_detail', person_id=earner.person_id) }}">{{ earner.person_name }}</a></td>
+                        <td>{{ earner.title }}, {{ earner.company_name }}</td>
+                        <td>${{ "{:,.0f}".format(earner.total_compensation) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="dashboard-card">
+            <h3>Quick Links</h3>
+            <a class="button-link" href="{{ url_for('company_list') }}">View All Company Payrolls</a>
+            <!-- Add more links as your app grows -->
+        </div>
+    </div>
+{% endblock %}

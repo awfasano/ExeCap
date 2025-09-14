@@ -1,46 +1,168 @@
 {% extends "base.html" %}
 
-{% block title %}{{ person.name }}{% endblock %}
+{% block title %}{{ person.name }} - Executive Profile{% endblock %}
 
 {% block content %}
-    <h1>{{ person.name }}</h1>
-
-    <div class="stats-container">
-        <div class="stat-card">
-            <span class="stat-title">Total Tracked Earnings</span>
-            <span class="stat-value">${{ "{:,.0f}".format(total_earnings) }}</span>
+    <div style="display: flex; align-items: center; gap: 2rem; margin-bottom: 2rem;">
+        <div style="width: 80px; height: 80px; background: linear-gradient(45deg, #10b981, #3b82f6); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: bold; color: white;">
+            {{ person.name.split()[0][0] }}{{ person.name.split()[-1][0] }}
         </div>
-        <div class="stat-card">
-            <span class="stat-title">Current Status</span>
-            <span class="stat-value">{{ person.status }}</span>
+        <div>
+            <h1 style="margin: 0;">{{ person.name }}</h1>
+            <p style="margin: 0; font-size: 1.1rem; color: #94a3b8;">
+                {{ person.age }} years old • {{ person.experience }} years executive experience • {{ person.status }}
+            </p>
+            <p style="margin: 0.5rem 0 0 0; color: #10b981; font-weight: 600;">{{ person.education }}</p>
         </div>
     </div>
 
-    <h3>Compensation History & Roles</h3>
+    <!-- Career Stats -->
+    <div class="stats-container">
+        <div class="stat-card">
+            <span class="stat-title">Career Earnings</span>
+            <span class="stat-value">${{ "{:,.0f}".format(career_stats.total_earnings) }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-title">Years Active</span>
+            <span class="stat-value">{{ career_stats.years_active }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-title">Companies</span>
+            <span class="stat-value">{{ career_stats.companies_count }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-title">Avg Annual</span>
+            <span class="stat-value">${{ "{:,.0f}".format(career_stats.avg_annual) }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-title">Career High</span>
+            <span class="stat-value">${{ "{:,.0f}".format(career_stats.highest_single_year) }}</span>
+        </div>
+    </div>
+
+    <!-- Previous Experience -->
+    {% if person.previous_companies %}
+    <div style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 1.5rem; border-radius: 12px; border: 1px solid #475569; margin-bottom: 2rem;">
+        <h3 style="color: #10b981; margin-top: 0;">🎯 Previous Experience</h3>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            {% for company in person.previous_companies %}
+            <span style="background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 0.5rem 1rem; border-radius: 20px; font-weight: 600; border: 1px solid rgba(16, 185, 129, 0.3);">
+                {{ company }}
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Contract History & Current Deals -->
+    <h3>💼 Contract History & Compensation Details</h3>
     <table>
         <thead>
             <tr>
                 <th>Company</th>
-                <th>Title</th>
+                <th>Position</th>
+                <th>Type</th>
                 <th>Year</th>
+                <th>Contract Length</th>
                 <th>Base Salary</th>
                 <th>Bonus</th>
                 <th>Stock Awards</th>
+                <th>Signing Bonus</th>
                 <th>Total Compensation</th>
             </tr>
         </thead>
         <tbody>
             {% for role in roles %}
             <tr>
-                <td><a href="{{ url_for('company_detail', company_id=role.company_id) }}">{{ role.company_name }}</a></td>
+                <td>
+                    <a href="{{ url_for('company_detail', company_id=role.company_id) }}">
+                        <strong>{{ role.company_name }}</strong><br>
+                        <small style="color: #94a3b8;">{{ role.company_ticker }}</small>
+                    </a>
+                </td>
                 <td>{{ role.title }}</td>
+                <td>
+                    <span class="position-badge {% if role.position_type == 'Board' %}board-badge{% endif %}">
+                        {{ role.position_type }}
+                    </span>
+                </td>
                 <td>{{ role.year }}</td>
-                <td>${{ "{:,.0f}".format(role.base_salary) }}</td>
-                <td>${{ "{:,.0f}".format(role.bonus) }}</td>
-                <td>${{ "{:,.0f}".format(role.stock_awards) }}</td>
-                <td class="total-comp">${{ "{:,.0f}".format(role.total_compensation) }}</td>
+                <td>
+                    <small style="color: #94a3b8;">
+                        {{ role.contract_years }} years
+                    </small>
+                </td>
+                <td class="salary-amount">${{ "{:,.0f}".format(role.base_salary) }}</td>
+                <td class="salary-amount">
+                    {% if role.bonus > 0 %}
+                        ${{ "{:,.0f}".format(role.bonus) }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td class="cap-hit">${{ "{:,.0f}".format(role.stock_awards) }}</td>
+                <td class="salary-amount">
+                    {% if role.signing_bonus > 0 %}
+                        ${{ "{:,.0f}".format(role.signing_bonus) }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td class="salary-amount"><strong>${{ "{:,.0f}".format(role.total_compensation) }}</strong></td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
+
+    <!-- Performance Metrics -->
+    <div style="margin-top: 2rem; display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+        <div style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 1.5rem; border-radius: 12px; border: 1px solid #475569;">
+            <h3 style="color: #10b981; margin-top: 0;">📊 Compensation Breakdown</h3>
+            <div style="display: grid; gap: 1rem;">
+                {% set total_base = roles|sum(attribute='base_salary') %}
+                {% set total_bonus = roles|sum(attribute='bonus') %}
+                {% set total_stock = roles|sum(attribute='stock_awards') %}
+                {% set total_signing = roles|sum(attribute='signing_bonus') %}
+
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Base Salary:</span>
+                    <span class="salary-amount">${{ "{:,.0f}".format(total_base) }} ({{ "{:.1f}".format((total_base/career_stats.total_earnings)*100) }}%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Performance Bonus:</span>
+                    <span class="salary-amount">${{ "{:,.0f}".format(total_bonus) }} ({{ "{:.1f}".format((total_bonus/career_stats.total_earnings)*100) }}%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Stock Awards:</span>
+                    <span class="cap-hit">${{ "{:,.0f}".format(total_stock) }} ({{ "{:.1f}".format((total_stock/career_stats.total_earnings)*100) }}%)</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Signing Bonuses:</span>
+                    <span class="salary-amount">${{ "{:,.0f}".format(total_signing) }} ({{ "{:.1f}".format((total_signing/career_stats.total_earnings)*100) }}%)</span>
+                </div>
+            </div>
+        </div>
+
+        <div style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 1.5rem; border-radius: 12px; border: 1px solid #475569;">
+            <h3 style="color: #3b82f6; margin-top: 0;">🏆 Career Highlights</h3>
+            <div style="display: grid; gap: 1rem;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Best Single Year:</span>
+                    <span class="salary-amount">${{ "{:,.0f}".format(career_stats.highest_single_year) }}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Companies Worked For:</span>
+                    <span class="cap-hit">{{ career_stats.companies_count }} teams</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Current Status:</span>
+                    <span class="{% if person.status == 'Active' %}salary-amount{% else %}cap-hit{% endif %}">{{ person.status }}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Years of Experience:</span>
+                    <span class="cap-hit">{{ person.experience }} years</span>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}
