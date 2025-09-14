@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}{{ person.name }}{% endblock %}
+
+{% block content %}
+    <h1>{{ person.name }}</h1>
+
+    <div class="stats-container">
+        <div class="stat-card">
+            <span class="stat-title">Total Tracked Earnings</span>
+            <span class="stat-value">${{ "{:,.0f}".format(total_earnings) }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-title">Current Status</span>
+            <span class="stat-value">{{ person.status }}</span>
+        </div>
+    </div>
+
+    <h3>Compensation History & Roles</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Company</th>
+                <th>Title</th>
+                <th>Year</th>
+                <th>Base Salary</th>
+                <th>Bonus</th>
+                <th>Stock Awards</th>
+                <th>Total Compensation</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for role in roles %}
+            <tr>
+                <td><a href="{{ url_for('company_detail', company_id=role.company_id) }}">{{ role.company_name }}</a></td>
+                <td>{{ role.title }}</td>
+                <td>{{ role.year }}</td>
+                <td>${{ "{:,.0f}".format(role.base_salary) }}</td>
+                <td>${{ "{:,.0f}".format(role.bonus) }}</td>
+                <td>${{ "{:,.0f}".format(role.stock_awards) }}</td>
+                <td class="total-comp">${{ "{:,.0f}".format(role.total_compensation) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

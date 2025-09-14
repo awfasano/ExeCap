@@ -1,0 +1,161 @@
+/* --- Basic Reset & Body Style --- */
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0;
+    background-color: #f0f2f5; /* Lighter grey background */
+    color: #333;
+    line-height: 1.6;
+}
+
+main {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+h1, h2, h3 {
+    color: #1b263b;
+    font-weight: 600;
+}
+
+h1 { margin-bottom: 0.5rem; }
+p { margin-top: 0; color: #555; }
+
+/* --- Navigation Bar --- */
+nav {
+    background-color: #fff;
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #ddd;
+}
+
+nav a {
+    color: #415a77;
+    text-decoration: none;
+    font-size: 1rem;
+    font-weight: 600;
+    margin-right: 2rem;
+}
+
+nav a.nav-brand {
+    color: #1b263b;
+    font-weight: 700;
+    font-size: 1.5rem;
+}
+
+nav a:hover {
+    color: #0d1b2a;
+}
+
+/* --- Dashboard & Stat Cards --- */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.dashboard-card, .stats-container, .chart-container {
+    background: #fff;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border: 1px solid #e0e0e0;
+}
+
+.stats-container {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-title {
+    font-size: 0.9rem;
+    color: #778da9;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #1b263b;
+}
+
+.button-link {
+    display: block;
+    background-color: #415a77;
+    color: #fff;
+    padding: 10px 15px;
+    text-align: center;
+    border-radius: 5px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: background-color 0.2s ease;
+}
+
+.button-link:hover {
+    background-color: #1b263b;
+}
+
+/* --- Chart Container --- */
+.chart-container {
+    margin-bottom: 2rem;
+    height: 400px; /* Give the chart a fixed height */
+    position: relative;
+}
+
+/* --- Table Styling --- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    overflow: hidden; /* For border-radius to work on tables */
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+th, td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #e0e0e0;
+    text-align: left;
+}
+
+th {
+    background-color: #f8f9fa;
+    color: #333;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+}
+
+tbody tr:last-child td {
+    border-bottom: none;
+}
+
+tbody tr:hover {
+    background-color: #f0f2f5;
+}
+
+table a {
+    color: #005f73;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+table a:hover {
+    text-decoration: underline;
+}
+
+.total-comp {
+    font-weight: 700;
+    color: #0d1b2a;
+}

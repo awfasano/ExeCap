@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Company Payrolls{% endblock %}
+
+{% block content %}
+    <h1>Company Payrolls</h1>
+    <p>Total C-Suite & Board compensation spending by company.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Company</th>
+                <th>Ticker</th>
+                <th>Total Executive Payroll</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for company in companies %}
+            <tr>
+                <td><a href="{{ url_for('company_detail', company_id=company.id) }}">{{ company.name }}</a></td>
+                <td>{{ company.ticker }}</td>
+                <td>${{ "{:,.0f}".format(company.total_payroll) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}
