@@ -1,120 +1,40 @@
-{% extends "base.html" %}
-
-{% block title %}ExecuCap League | Executive Salary Cap Tracker{% endblock %}
-
-{% block content %}
-    <h1>🏆 Executive Compensation League</h1>
-    <p>Track executive "salary caps" and compensation across the corporate league</p>
-
-    <!-- League Cap Overview -->
-    <div class="cap-overview">
-        {% for standing in league_standings %}
-        <div class="cap-card">
-            <div class="cap-header">
-                <div class="company-logo">{{ standing.company.ticker[:2] }}</div>
-                <div>
-                    <h3 style="margin: 0; color: #f1f5f9;">{{ standing.company.name }}</h3>
-                    <p style="margin: 0; color: #94a3b8; font-size: 0.9rem;">{{ standing.company.ticker }} • {{ standing.company.sector }}</p>
-                </div>
-            </div>
-            
-            <div class="cap-usage">
-                <div class="cap-bar">
-                    <div class="cap-fill {% if standing.cap_info.utilization_pct > 100 %}over-budget{% endif %}" 
-                         style="width: {{ [standing.cap_info.utilization_pct, 100]|min }}%"></div>
-                </div>
-            </div>
-            
-            <div class="cap-stats">
-                <div class="stat-item">
-                    <div class="stat-label">Cap Used</div>
-                    <div class="stat-value">${{ "{:,.0f}".format(standing.cap_info.total_spent) }}</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Cap Space</div>
-                    <div class="stat-value" style="color: {% if standing.cap_info.remaining < 0 %}#ef4444{% else %}#10b981{% endif %}">
-                        {% if standing.cap_info.remaining < 0 %}
-                            -${{ "{:,.0f}".format(abs(standing.cap_info.remaining)) }}
-                        {% else %}
-                            ${{ "{:,.0f}".format(standing.cap_info.remaining) }}
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Utilization</div>
-                    <div class="stat-value">{{ "{:.1f}".format(standing.cap_info.utilization_pct) }}%</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Roster Size</div>
-                    <div class="stat-value">{{ standing.executive_count }}</div>
-                </div>
-            </div>
-            
-            <a href="{{ url_for('company_detail', company_id=standing.company_id) }}" class="button-link" style="margin-top: 1rem;">
-                View Roster & Cap Details
-            </a>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ExecuCap | Executive Salary Cap Tracker{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💰</text></svg>">
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('index') }}" class="nav-brand">ExecuCap 💰</a>
+        <a href="{{ url_for('company_list') }}">🏢 Team Salary Caps</a>
+        <a href="{{ url_for('free_agents') }}">🎯 Free Agents</a>
+        
+        <!-- Future features -->
+        <div style="margin-left: auto; display: flex; gap: 1rem;">
+            <span style="color: #64748b; font-size: 0.9rem; padding: 0.5rem;">
+                Season: 2024
+            </span>
         </div>
-        {% endfor %}
-    </div>
-
-    <div class="dashboard-grid">
-        <div class="dashboard-card">
-            <h3>🌟 Highest Paid Executives (League Leaders)</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Executive</th>
-                        <th>Position</th>
-                        <th>Team</th>
-                        <th>Years Exp</th>
-                        <th>Total Compensation</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for earner in top_earners %}
-                    <tr>
-                        <td><a href="{{ url_for('person_detail', person_id=earner.person_id) }}">{{ earner.person_name }}</a></td>
-                        <td>
-                            <span class="position-badge">{{ earner.title.split()[0] }}</span>
-                            {{ earner.title }}
-                        </td>
-                        <td>
-                            <a href="{{ url_for('company_detail', company_id=earner.person_id) }}">
-                                {{ earner.company_ticker }}
-                            </a>
-                        </td>
-                        <td>{{ earner.experience }}y</td>
-                        <td class="salary-amount">${{ "{:,.0f}".format(earner.total_compensation) }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    </nav>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Footer -->
+    <footer style="background: linear-gradient(90deg, #1e293b 0%, #334155 100%); padding: 2rem; margin-top: 3rem; border-top: 3px solid #10b981;">
+        <div style="max-width: 1400px; margin: 0 auto; text-align: center;">
+            <p style="color: #94a3b8; margin: 0;">
+                ExecuCap - Executive Salary Cap Tracker | 
+                <span style="color: #10b981;">💰</span> Track corporate executive compensation like NFL salary caps
+            </p>
         </div>
-
-        <div class="dashboard-card">
-            <h3>🚀 Quick Navigation</h3>
-            <a class="button-link" href="{{ url_for('company_list') }}" style="margin-bottom: 1rem;">
-                📊 All Team Cap Situations
-            </a>
-            <a class="button-link" href="{{ url_for('free_agents') }}" style="margin-bottom: 1rem;">
-                🎯 Available Executives
-            </a>
-            
-            <h4 style="color: #94a3b8; margin-top: 2rem; margin-bottom: 1rem;">League Stats</h4>
-            <div class="stats-container" style="grid-template-columns: 1fr;">
-                <div class="stat-card">
-                    <span class="stat-title">Total League Spending</span>
-                    <span class="stat-value">
-                        ${{ "{:,.0f}".format(league_standings|sum(attribute='cap_info.total_spent')) }}
-                    </span>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-title">Avg Team Utilization</span>
-                    <span class="stat-value">
-                        {{ "{:.1f}".format((league_standings|sum(attribute='cap_info.utilization_pct')) / league_standings|length) }}%
-                    </span>
-                </div>
-            </div>
-        </div>
-    </div>
-{% endblock %}
+    </footer>
+</body>
+</html>
