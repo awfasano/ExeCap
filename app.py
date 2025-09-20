@@ -21,21 +21,31 @@ def get_selected_year():
 
 # Load initial data
 print("Loading initial data...")
-load_result = folder_loader.load_all_company_data(
-    specific_year=DEFAULT_YEAR,  # Load specific year on startup
-    load_all_years=False  # Set to True if you want to load all years at once
-)
+try:
+    load_result = folder_loader.load_all_company_data(
+        specific_year=DEFAULT_YEAR,  # Load specific year on startup
+        load_all_years=False  # Set to True if you want to load all years at once
+    )
 
-if load_result['status'] == 'success':
-    print(f"Successfully loaded data for companies: {load_result['companies_loaded']}")
-    print(
-        f"Total: {load_result['companies_count']} companies, {load_result['people_count']} people, {load_result['roles_count']} roles")
+    if load_result['status'] == 'success':
+        print(f"Successfully loaded data for companies: {load_result['companies_loaded']}")
+        print(
+            f"Total: {load_result['companies_count']} companies, {load_result['people_count']} people, {load_result['roles_count']} roles")
 
-    # Get the league manager directly from the loader
-    league_manager = folder_loader.get_league_manager()
-else:
-    print(f"Error loading data: {load_result.get('message', 'Unknown error')}")
-    # Initialize empty league manager
+        # Get the league manager directly from the loader
+        league_manager = folder_loader.get_league_manager()
+    else:
+        print(f"Error loading data: {load_result.get('message', 'Unknown error')}")
+        # Initialize empty league manager
+        from models import LeagueManager
+
+        league_manager = LeagueManager()
+except Exception as e:
+    print(f"Failed to load initial data: {str(e)}")
+    print("Starting with empty data. You may need to:")
+    print("1. Check your GCS bucket permissions")
+    print("2. Verify the bucket name is 'execap'")
+    print("3. Upload Excel files in the correct structure")
     from models import LeagueManager
 
     league_manager = LeagueManager()
@@ -523,6 +533,54 @@ def available_years():
         'default_year': DEFAULT_YEAR,
         'current_selection': get_selected_year()
     })
+
+
+@app.route('/api/diagnostic')
+def diagnostic():
+    """Diagnostic endpoint to check system status"""
+    try:
+        # Check GCS connection
+        from google.cloud import storage
+        client = storage.Client()
+        bucket = client.bucket(BUCKET_NAME)
+
+        # List files in bucket
+        files = []
+        companies_found = set()
+        years_found = set()
+
+        for blob in bucket.list_blobs(prefix="companies/", max_results=20):
+            files.append(blob.name)
+            path_parts = blob.name.split('/')
+            if len(path_parts) >= 2:
+                companies_found.add(path_parts[1])
+            if len(path_parts) >= 3 and path_parts[2].isdigit():
+                years_found.add(path_parts[2])
+
+        # Current data status
+        data_status = {
+            'bucket_name': BUCKET_NAME,
+            'bucket_accessible': True,
+            'files_found': len(files),
+            'sample_files': files[:10],
+            'companies_in_bucket': list(companies_found),
+            'years_in_bucket': sorted(list(years_found)),
+            'companies_loaded': len(league_manager.companies),
+            'people_loaded': len(league_manager.people),
+            'roles_loaded': len(league_manager.all_roles),
+            'default_year': DEFAULT_YEAR,
+            'current_year': get_selected_year()
+        }
+
+    except Exception as e:
+        data_status = {
+            'bucket_name': BUCKET_NAME,
+            'bucket_accessible': False,
+            'error': str(e),
+            'error_type': type(e).__name__
+        }
+
+    return jsonify(data_status)
 
 
 if __name__ == '__main__':

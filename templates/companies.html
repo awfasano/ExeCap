@@ -6,6 +6,7 @@
     <h1>💰 Team Salary Cap Situations</h1>
     <p>Executive compensation budget utilization across all teams in the league</p>
 
+    {% if companies %}
     <div class="stats-container">
         <div class="stat-card">
             <span class="stat-title">Teams Over Budget</span>
@@ -16,7 +17,11 @@
         <div class="stat-card">
             <span class="stat-title">Avg Cap Utilization</span>
             <span class="stat-value">
-                {{ "{:.1f}".format((companies|sum(attribute='cap_info.utilization_pct')) / companies|length) }}%
+                {% if companies|length > 0 %}
+                    {{ "{:.1f}".format((companies|sum(attribute='cap_info.utilization_pct')) / companies|length) }}%
+                {% else %}
+                    0.0%
+                {% endif %}
             </span>
         </div>
         <div class="stat-card">
@@ -81,7 +86,26 @@
             {% endfor %}
         </tbody>
     </table>
+    {% else %}
+    <div style="text-align: center; padding: 3rem; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border-radius: 12px; border: 1px solid #475569; margin-top: 2rem;">
+        <h3 style="color: #f59e0b; margin-bottom: 1rem;">⚠️ No Data Available</h3>
+        <p style="color: #94a3b8; margin: 0 0 1.5rem 0;">
+            No company data found for the selected year. This could mean:
+        </p>
+        <ul style="text-align: left; display: inline-block; color: #94a3b8;">
+            <li>No Excel files uploaded to the GCS bucket yet</li>
+            <li>Files are not in the correct folder structure (companies/company_name/year/)</li>
+            <li>The selected year has no data</li>
+        </ul>
+        <p style="margin-top: 2rem;">
+            <a href="{{ url_for('refresh_data') }}" class="button-link" style="display: inline-block;">
+                🔄 Refresh Data
+            </a>
+        </p>
+    </div>
+    {% endif %}
 
+    {% if companies %}
     <div style="margin-top: 2rem; padding: 1rem; background: linear-gradient(135deg, #1e293b 0%, #334155 100%); border-radius: 8px; border: 1px solid #475569;">
         <h3 style="color: #10b981; margin-top: 0;">💡 Cap Space Explanation</h3>
         <p style="color: #94a3b8; margin-bottom: 0;">
@@ -90,4 +114,5 @@
             <strong>Utilization:</strong> Percentage of budget currently being used. Teams over 100% are exceeding their planned budget.
         </p>
     </div>
+    {% endif %}
 {% endblock %}
