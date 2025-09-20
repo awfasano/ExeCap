@@ -1,116 +1,27 @@
-from flask import Flask, render_template, url_for
+from flask import Flask, render_template, url_for, jsonify
 import json
+from company_folder_loader import CompanyFolderLoader
 
 app = Flask(__name__)
 
-# Enhanced data structure with cap space elements
-COMPANIES = {
-    101: {
-        'name': 'Quantum Innovations Inc.',
-        'ticker': 'QII',
-        'sector': 'Technology',
-        'market_cap': 85_000_000_000,  # $85B
-        'revenue': 12_500_000_000,  # $12.5B
-        'exec_budget': 50_000_000,  # "Salary cap" for executives
-        'founded': 2010
-    },
-    102: {
-        'name': 'Apex Solutions Ltd.',
-        'ticker': 'ASL',
-        'sector': 'Industrials',
-        'market_cap': 32_000_000_000,  # $32B
-        'revenue': 8_200_000_000,  # $8.2B
-        'exec_budget': 35_000_000,  # Executive budget
-        'founded': 2005
-    },
-    103: {
-        'name': 'Stellar Holdings Group',
-        'ticker': 'SHG',
-        'sector': 'Financials',
-        'market_cap': 67_000_000_000,  # $67B
-        'revenue': 15_800_000_000,  # $15.8B
-        'exec_budget': 45_000_000,  # Executive budget
-        'founded': 1998
-    },
-}
+# Configuration - UPDATE THESE WITH YOUR ACTUAL VALUES
+BUCKET_NAME = "your-bucket-name"  # Replace with your actual GCS bucket name
+CREDENTIALS_PATH = None  # Use None for default credentials or specify path to JSON file
 
-PEOPLE = {
-    1: {
-        'name': 'Alex Rivera',
-        'status': 'Active',
-        'age': 52,
-        'experience': 15,  # Years as executive
-        'education': 'MBA Harvard',
-        'previous_companies': ['Meta', 'Google']
-    },
-    2: {
-        'name': 'Samantha Chen',
-        'status': 'Active',
-        'age': 48,
-        'experience': 12,
-        'education': 'CPA, Wharton',
-        'previous_companies': ['Goldman Sachs', 'JP Morgan']
-    },
-    3: {
-        'name': 'David Garcia',
-        'status': 'Active',
-        'age': 65,
-        'experience': 25,
-        'education': 'JD Stanford',
-        'previous_companies': ['Boeing', 'Lockheed Martin']
-    },
-    4: {
-        'name': 'Maria Rodriguez',
-        'status': 'Active',
-        'age': 45,
-        'experience': 10,
-        'education': 'PhD MIT',
-        'previous_companies': ['Tesla', 'SpaceX']
-    },
-    5: {
-        'name': 'James "Jim" Peterson',
-        'status': 'Retired',
-        'age': 68,
-        'experience': 30,
-        'education': 'MBA Kellogg',
-        'previous_companies': ['IBM', 'Microsoft']
-    },
-    6: {
-        'name': 'Patricia Jenkins',
-        'status': 'Active',
-        'age': 50,
-        'experience': 18,
-        'education': 'MBA Sloan',
-        'previous_companies': ['Bank of America', 'Wells Fargo']
-    },
-}
+# Initialize the Excel loader
+folder_loader = CompanyFolderLoader(BUCKET_NAME, CREDENTIALS_PATH)
 
-ROLES = [
-    # Quantum Innovations Inc. (QII) - "Roster"
-    {'person_id': 1, 'company_id': 101, 'title': 'Chief Executive Officer', 'position_type': 'C-Suite', 'year': 2024,
-     'contract_years': 5, 'base_salary': 1_500_000, 'bonus': 5_000_000, 'stock_awards': 19_000_000,
-     'signing_bonus': 2_000_000},
-    {'person_id': 2, 'company_id': 101, 'title': 'Chief Financial Officer', 'position_type': 'C-Suite', 'year': 2024,
-     'contract_years': 4, 'base_salary': 950_000, 'bonus': 2_250_000, 'stock_awards': 12_000_000, 'signing_bonus': 0},
-    {'person_id': 3, 'company_id': 101, 'title': 'Chairman of the Board', 'position_type': 'Board', 'year': 2024,
-     'contract_years': 3, 'base_salary': 200_000, 'bonus': 0, 'stock_awards': 300_000, 'signing_bonus': 0},
+# Load data from all company folders
+load_result = folder_loader.load_all_company_data()
+if load_result['status'] == 'success':
+    print(f"Successfully loaded data for companies: {load_result['companies_loaded']}")
+    print(f"Total: {load_result['companies_count']} companies, {load_result['people_count']} people, {load_result['roles_count']} roles")
+else:
+    print(f"Error loading data: {load_result.get('message', 'Unknown error')}")
 
-    # Apex Solutions Ltd. (ASL) - "Roster"
-    {'person_id': 4, 'company_id': 102, 'title': 'Chief Executive Officer', 'position_type': 'C-Suite', 'year': 2024,
-     'contract_years': 6, 'base_salary': 1_200_000, 'bonus': 3_600_000, 'stock_awards': 15_000_000,
-     'signing_bonus': 1_500_000},
-    {'person_id': 5, 'company_id': 102, 'title': 'Chief Technology Officer', 'position_type': 'C-Suite', 'year': 2023,
-     'contract_years': 2, 'base_salary': 800_000, 'bonus': 1_200_000, 'stock_awards': 10_000_000, 'signing_bonus': 0},
-    {'person_id': 1, 'company_id': 102, 'title': 'Board Member', 'position_type': 'Board', 'year': 2024,
-     'contract_years': 2, 'base_salary': 100_000, 'bonus': 0, 'stock_awards': 250_000, 'signing_bonus': 0},
-
-    # Stellar Holdings Group (SHG) - "Roster"
-    {'person_id': 6, 'company_id': 103, 'title': 'CEO & Chairperson', 'position_type': 'C-Suite', 'year': 2024,
-     'contract_years': 5, 'base_salary': 1_800_000, 'bonus': 4_300_000, 'stock_awards': 16_000_000,
-     'signing_bonus': 3_000_000},
-    {'person_id': 2, 'company_id': 103, 'title': 'Board Member', 'position_type': 'Board', 'year': 2024,
-     'contract_years': 3, 'base_salary': 125_000, 'bonus': 0, 'stock_awards': 250_000, 'signing_bonus': 0},
-]
+COMPANIES = folder_loader.get_companies()
+PEOPLE = folder_loader.get_people()
+ROLES = folder_loader.get_roles()
 
 
 def get_total_compensation(role):
@@ -123,9 +34,9 @@ def get_total_compensation(role):
 
 def get_cap_utilization(company_id):
     """Calculate how much of the executive budget is being used"""
-    company = COMPANIES[company_id]
+    company = COMPANIES.get(company_id, {})
     total_spent = sum(get_total_compensation(r) for r in ROLES if r['company_id'] == company_id)
-    budget = company['exec_budget']
+    budget = company.get('exec_budget', 0)
     utilization = (total_spent / budget) * 100 if budget > 0 else 0
     return {
         'total_spent': total_spent,
@@ -137,25 +48,26 @@ def get_cap_utilization(company_id):
 
 @app.route('/')
 def index():
-    """League Overview - like NFL.com homepage"""
-    # Top earners across the "league"
+    """League Overview - using Excel data"""
     all_executives = []
     for role in ROLES:
-        if role['position_type'] == 'C-Suite':  # Focus on C-Suite for top earners
+        if role['position_type'] == 'C-Suite':
             total_comp = get_total_compensation(role)
+            person = PEOPLE.get(role['person_id'], {})
+            company = COMPANIES.get(role['company_id'], {})
+
             all_executives.append({
                 'person_id': role['person_id'],
-                'person_name': PEOPLE[role['person_id']]['name'],
-                'company_name': COMPANIES[role['company_id']]['name'],
-                'company_ticker': COMPANIES[role['company_id']]['ticker'],
+                'person_name': person.get('name', 'Unknown'),
+                'company_name': company.get('name', 'Unknown'),
+                'company_ticker': company.get('ticker', 'UNK'),
                 'title': role['title'],
                 'total_compensation': total_comp,
-                'experience': PEOPLE[role['person_id']]['experience']
+                'experience': person.get('experience', 0)
             })
 
     top_earners = sorted(all_executives, key=lambda x: x['total_compensation'], reverse=True)[:5]
 
-    # League standings by market cap
     league_standings = []
     for cid, company in COMPANIES.items():
         cap_info = get_cap_utilization(cid)
@@ -175,12 +87,10 @@ def index():
 
 @app.route('/companies')
 def company_list():
-    """All Companies - like NFL teams page"""
+    """All Companies - using Excel data"""
     companies_data = []
     for cid, company_data in COMPANIES.items():
         cap_info = get_cap_utilization(cid)
-
-        # Get roster composition
         c_suite_count = len([r for r in ROLES if r['company_id'] == cid and r['position_type'] == 'C-Suite'])
         board_count = len([r for r in ROLES if r['company_id'] == cid and r['position_type'] == 'Board'])
 
@@ -197,34 +107,32 @@ def company_list():
             'total_executives': c_suite_count + board_count
         })
 
-    # Sort by cap utilization percentage
     sorted_companies = sorted(companies_data, key=lambda x: x['cap_info']['utilization_pct'], reverse=True)
     return render_template('companies.html', companies=sorted_companies)
 
 
 @app.route('/company/<int:company_id>')
 def company_detail(company_id):
-    """Team Roster & Cap Space - like individual NFL team page"""
+    """Team Roster & Cap Space - using Excel data"""
     company_info = COMPANIES.get(company_id)
     if not company_info:
         return "Company not found", 404
 
     cap_info = get_cap_utilization(company_id)
 
-    # Get the "roster"
     executives = []
     for role in ROLES:
         if role['company_id'] == company_id:
-            person = PEOPLE.get(role['person_id'])
+            person = PEOPLE.get(role['person_id'], {})
             total_comp = get_total_compensation(role)
             executives.append({
                 'person_id': role['person_id'],
-                'name': person['name'],
+                'name': person.get('name', 'Unknown'),
                 'title': role['title'],
                 'position_type': role['position_type'],
                 'contract_years': role['contract_years'],
-                'age': person['age'],
-                'experience': person['experience'],
+                'age': person.get('age', 0),
+                'experience': person.get('experience', 0),
                 'base_salary': role['base_salary'],
                 'bonus': role['bonus'],
                 'stock_awards': role['stock_awards'],
@@ -233,14 +141,10 @@ def company_detail(company_id):
                 'cap_hit_pct': (total_comp / company_info['exec_budget']) * 100
             })
 
-    # Sort by total compensation
     executives = sorted(executives, key=lambda x: x['total_compensation'], reverse=True)
-
-    # Separate C-Suite and Board
     c_suite = [e for e in executives if e['position_type'] == 'C-Suite']
     board_members = [e for e in executives if e['position_type'] == 'Board']
 
-    # Chart data
     chart_labels = [exec['name'] for exec in executives]
     chart_data = [exec['total_compensation'] for exec in executives]
 
@@ -259,23 +163,22 @@ def company_detail(company_id):
 
 @app.route('/person/<int:person_id>')
 def person_detail(person_id):
-    """Player Profile - like individual NFL player page"""
+    """Player Profile - using Excel data"""
     person_info = PEOPLE.get(person_id)
     if not person_info:
         return "Person not found", 404
 
-    # Get all roles/contracts
     person_roles = []
     total_earnings = 0
     for role in ROLES:
         if role['person_id'] == person_id:
-            company = COMPANIES.get(role['company_id'])
+            company = COMPANIES.get(role['company_id'], {})
             total_comp = get_total_compensation(role)
             total_earnings += total_comp
             person_roles.append({
                 'company_id': role['company_id'],
-                'company_name': company['name'],
-                'company_ticker': company['ticker'],
+                'company_name': company.get('name', 'Unknown'),
+                'company_ticker': company.get('ticker', 'UNK'),
                 'title': role['title'],
                 'position_type': role['position_type'],
                 'year': role['year'],
@@ -287,7 +190,6 @@ def person_detail(person_id):
                 'total_compensation': total_comp
             })
 
-    # Career stats
     years_active = len(set(role['year'] for role in person_roles))
     companies_played_for = len(set(role['company_id'] for role in person_roles))
     avg_annual = total_earnings / years_active if years_active > 0 else 0
@@ -309,12 +211,9 @@ def person_detail(person_id):
 @app.route('/free-agents')
 def free_agents():
     """Available executives not currently with companies"""
-    # In a real app, this would show executives between companies
-    # For now, we'll show retired executives who could potentially return
     free_agents = []
     for pid, person in PEOPLE.items():
         if person['status'] == 'Retired':
-            # Get their last known compensation
             last_roles = [r for r in ROLES if r['person_id'] == pid]
             if last_roles:
                 last_role = max(last_roles, key=lambda x: x['year'])
@@ -331,6 +230,37 @@ def free_agents():
                 })
 
     return render_template('free_agents.html', free_agents=free_agents)
+
+
+@app.route('/refresh-data')
+def refresh_data():
+    """Refresh data from company folders"""
+    global COMPANIES, PEOPLE, ROLES
+
+    load_result = folder_loader.load_all_company_data()
+    if load_result['status'] == 'success':
+        COMPANIES = folder_loader.get_companies()
+        PEOPLE = folder_loader.get_people()
+        ROLES = folder_loader.get_roles()
+
+        return f"Data refreshed! Loaded {load_result['companies_count']} companies, {load_result['people_count']} people, {load_result['roles_count']} roles"
+    else:
+        return f"Error refreshing data: {load_result.get('message')}"
+
+
+@app.route('/api/company-folders')
+def list_company_folders():
+    """API endpoint to list available company folders"""
+    folders = folder_loader.list_company_folders()
+    company_files = {}
+
+    for company in folders:
+        company_files[company] = folder_loader.list_excel_files_for_company(company)
+
+    return jsonify({
+        'folders': folders,
+        'files_by_company': company_files
+    })
 
 
 if __name__ == '__main__':
