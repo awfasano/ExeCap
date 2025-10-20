@@ -1,7 +1,11 @@
 # app.py - Complete version with year-based data structure support
-from flask import Flask, render_template, url_for, jsonify, request
 import json
+import os
+from typing import List, Optional, Set
+
 from company_folder_loader import CompanyFolderLoader
+from fortune10_loader import Fortune10LoadError, load_fortune10_league
+from models import LeagueManager
 
 app = Flask(__name__)
 
@@ -9,6 +13,7 @@ app = Flask(__name__)
 BUCKET_NAME = "execap"  # Your GCS bucket name
 CREDENTIALS_PATH = None  # Use None for default credentials (uses Application Default Credentials)
 DEFAULT_YEAR = "2024"  # Default year to load
+DATA_SOURCE = os.getenv('DATA_SOURCE', 'fortune10').lower()  # 'fortune10' or 'gcs'
 
 # Role archetypes for position leader board
 ROLE_CATEGORY_RULES = [
@@ -54,8 +59,48 @@ ROLE_CATEGORY_RULES = [
     }
 ]
 
-# Initialize the Excel loader
-folder_loader = CompanyFolderLoader(BUCKET_NAME, CREDENTIALS_PATH)
+# Initialize the Excel loader when using GCS
+folder_loader: Optional[CompanyFolderLoader] = None
+if DATA_SOURCE != 'fortune10':
+    folder_loader = CompanyFolderLoader(BUCKET_NAME, CREDENTIALS_PATH)
+
+FALLBACK_AVAILABLE_YEARS: Set[str] = set()
+USING_SAMPLE_DATA = DATA_SOURCE == 'fortune10'
+
+
+def load_fortune10_sample_dataset() -> LeagueManager:
+    """Load the bundled Fortune 10 dataset as a local development fallback."""
+    global FALLBACK_AVAILABLE_YEARS, USING_SAMPLE_DATA
+    try:
+        league, years = load_fortune10_league()
+        FALLBACK_AVAILABLE_YEARS = {str(year) for year in years}
+        USING_SAMPLE_DATA = True
+        print("Loaded Fortune 10 sample dataset for local development.")
+        return league
+    except Fortune10LoadError as error:
+        print(f"Fortune 10 sample data unavailable: {error}")
+    except Exception as error:
+        print(f"Unexpected error loading Fortune 10 sample data: {error}")
+
+    FALLBACK_AVAILABLE_YEARS = {DEFAULT_YEAR}
+    USING_SAMPLE_DATA = True
+    return LeagueManager()
+
+
+def get_available_year_options() -> List[str]:
+    """Return the list of seasons available for selection."""
+    if FALLBACK_AVAILABLE_YEARS:
+        return sorted(FALLBACK_AVAILABLE_YEARS, reverse=True)
+
+    if folder_loader:
+        try:
+            years = folder_loader.get_available_years()
+            if years:
+                return sorted(years, reverse=True)
+        except Exception as error:
+            print(f"Unable to list years from bucket: {error}")
+
+    return [DEFAULT_YEAR]
 
 
 # Get current year from query params or use default
@@ -65,34 +110,34 @@ def get_selected_year():
 
 # Load initial data
 print("Loading initial data...")
-try:
-    load_result = folder_loader.load_all_company_data(
-        specific_year=DEFAULT_YEAR,  # Load specific year on startup
-        load_all_years=False  # Set to True if you want to load all years at once
-    )
+if DATA_SOURCE == 'fortune10':
+    league_manager = load_fortune10_sample_dataset()
+else:
+    try:
+        load_result = folder_loader.load_all_company_data(
+            specific_year=DEFAULT_YEAR,  # Load specific year on startup
+            load_all_years=False  # Set to True if you want to load all years at once
+        )
 
-    if load_result['status'] == 'success':
-        print(f"Successfully loaded data for companies: {load_result['companies_loaded']}")
-        print(
-            f"Total: {load_result['companies_count']} companies, {load_result['people_count']} people, {load_result['roles_count']} roles")
+        if load_result['status'] == 'success' and load_result.get('companies_count'):
+            print(f"Successfully loaded data for companies: {load_result['companies_loaded']}")
+            print(
+                f"Total: {load_result['companies_count']} companies, {load_result['people_count']} people, {load_result['roles_count']} roles")
 
-        # Get the league manager directly from the loader
-        league_manager = folder_loader.get_league_manager()
-    else:
-        print(f"Error loading data: {load_result.get('message', 'Unknown error')}")
-        # Initialize empty league manager
-        from models import LeagueManager
-
-        league_manager = LeagueManager()
-except Exception as e:
-    print(f"Failed to load initial data: {str(e)}")
-    print("Starting with empty data. You may need to:")
-    print("1. Check your GCS bucket permissions")
-    print("2. Verify the bucket name is 'execap'")
-    print("3. Upload Excel files in the correct structure")
-    from models import LeagueManager
-
-    league_manager = LeagueManager()
+            # Get the league manager directly from the loader
+            league_manager = folder_loader.get_league_manager()
+            FALLBACK_AVAILABLE_YEARS.clear()
+            USING_SAMPLE_DATA = False
+        else:
+            print(f"Error loading data: {load_result.get('message', 'Unknown error')}")
+            league_manager = load_fortune10_sample_dataset()
+    except Exception as e:
+        print(f"Failed to load initial data: {str(e)}")
+        print("Starting with empty data. You may need to:")
+        print("1. Check your GCS bucket permissions")
+        print("2. Verify the bucket name is 'execap'")
+        print("3. Upload Excel files in the correct structure")
+        league_manager = load_fortune10_sample_dataset()
 
 
 @app.route('/')
@@ -101,7 +146,9 @@ def index():
     year = get_selected_year()
 
     # Get available years for dropdown
-    available_years = sorted(folder_loader.get_available_years(), reverse=True)
+    available_years = get_available_year_options()
+    if year not in available_years and available_years:
+        year = available_years[0]
 
     # Filter data by year if needed
     top_earners_data = league_manager.get_top_earners_league_wide(limit=5)
@@ -216,6 +263,10 @@ def company_list():
     year = get_selected_year()
     companies_data = []
 
+    available_years = get_available_year_options()
+    if year not in available_years and available_years:
+        year = available_years[0]
+
     for company in league_manager.companies.values():
         # Filter roles by year if specified
         if year:
@@ -259,8 +310,6 @@ def company_list():
                               reverse=True)
 
     # Get available years for dropdown
-    available_years = sorted(folder_loader.get_available_years(), reverse=True)
-
     return render_template('companies.html',
                            companies=sorted_companies,
                            selected_year=year,
@@ -472,6 +521,10 @@ def person_detail(person_id):
 def free_agents():
     """Available executives not currently with companies"""
     year = get_selected_year()
+    available_years = get_available_year_options()
+    if year not in available_years and available_years:
+        year = available_years[0]
+
     free_agents_list = []
 
     for person in league_manager.get_free_agents():
@@ -504,8 +557,6 @@ def free_agents():
             })
 
     # Get available years
-    available_years = sorted(folder_loader.get_available_years(), reverse=True)
-
     return render_template('free_agents.html',
                            free_agents=free_agents_list,
                            selected_year=year,
@@ -515,7 +566,11 @@ def free_agents():
 @app.route('/refresh-data')
 def refresh_data():
     """Refresh data from company folders"""
-    global league_manager
+    global league_manager, FALLBACK_AVAILABLE_YEARS, USING_SAMPLE_DATA
+
+    if DATA_SOURCE == 'fortune10' or not folder_loader:
+        league_manager = load_fortune10_sample_dataset()
+        return "Sample Fortune 10 data reloaded. Switch DATA_SOURCE to 'gcs' once you migrate to Firebase or cloud storage."
 
     year = get_selected_year()
     load_all = request.args.get('all_years', 'false').lower() == 'true'
@@ -528,37 +583,64 @@ def refresh_data():
     if load_result['status'] == 'success':
         # Get the updated league manager directly
         league_manager = folder_loader.get_league_manager()
+        FALLBACK_AVAILABLE_YEARS.clear()
+        USING_SAMPLE_DATA = False
 
         return f"Data refreshed! Loaded {load_result['companies_count']} companies, {load_result['people_count']} people, {load_result['roles_count']} roles for year {year if not load_all else 'all years'}"
     else:
-        return f"Error refreshing data: {load_result.get('message')}"
+        league_manager = load_fortune10_sample_dataset()
+        return f"Error refreshing data: {load_result.get('message')}. Loaded bundled Fortune 10 sample data instead."
 
 
 @app.route('/api/company-folders')
 def list_company_folders():
     """API endpoint to list available company folders with years"""
-    folders = folder_loader.list_company_folders()
-    company_files = {}
-    company_years = {}
+    if USING_SAMPLE_DATA:
+        folders = [company.name for company in league_manager.companies.values()]
+        company_years = {
+            company.name: sorted({str(role.year) for role in company.all_roles}, reverse=True)
+            for company in league_manager.companies.values()
+        }
+        return jsonify({
+            'folders': folders,
+            'company_years': company_years,
+            'files_by_company_year': {},
+            'available_years': get_available_year_options()
+        })
 
-    for company in folders:
-        # Get years for this company
-        years = folder_loader.list_years_for_company(company)
-        company_years[company] = years
+    try:
+        folders = folder_loader.list_company_folders()
+        company_files = {}
+        company_years = {}
 
-        # Get files for each year
-        company_files[company] = {}
-        for year in years:
-            files = folder_loader.list_excel_files_for_company_year(company, year)
-            if year in files['by_year']:
-                company_files[company][year] = files['by_year'][year]
+        for company in folders:
+            # Get years for this company
+            years = folder_loader.list_years_for_company(company)
+            company_years[company] = years
 
-    return jsonify({
-        'folders': folders,
-        'company_years': company_years,
-        'files_by_company_year': company_files,
-        'available_years': sorted(folder_loader.get_available_years(), reverse=True)
-    })
+            # Get files for each year
+            company_files[company] = {}
+            for year in years:
+                files = folder_loader.list_excel_files_for_company_year(company, year)
+                if year in files['by_year']:
+                    company_files[company][year] = files['by_year'][year]
+
+        response = {
+            'folders': folders,
+            'company_years': company_years,
+            'files_by_company_year': company_files,
+            'available_years': get_available_year_options()
+        }
+        return jsonify(response)
+    except Exception as error:
+        return jsonify({
+            'error': str(error),
+            'details': 'Unable to access bucket contents.',
+            'folders': [],
+            'company_years': {},
+            'files_by_company_year': {},
+            'available_years': get_available_year_options()
+        }), 500
 
 
 @app.route('/api/league-stats')
@@ -642,7 +724,7 @@ def person_api(person_id):
 @app.route('/api/years')
 def available_years():
     """API endpoint to get all available years"""
-    years = sorted(folder_loader.get_available_years(), reverse=True)
+    years = get_available_year_options()
     return jsonify({
         'years': years,
         'default_year': DEFAULT_YEAR,
