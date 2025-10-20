@@ -22,6 +22,15 @@ _FINANCIAL_SNAPSHOT = {
     "Chevron Corporation": {"market_cap": 290_000_000_000, "revenue": 246_300_000_000},
 }
 
+_SHARE_COUNT_OVERRIDES = {
+    ("Walmart Inc.", "Doug McMillon"): 1_552_575,
+    ("Walmart Inc.", "John David Rainey"): 910_038,
+    ("Walmart Inc.", "Suresh Kumar"): 831_276,
+    ("Walmart Inc.", "John Furner"): 831_276,
+    ("Walmart Inc.", "Kathryn McLay"): 699_144,
+    ("Walmart Inc.", "Chris Nicholas"): 452_939,
+}
+
 
 class Fortune10LoadError(RuntimeError):
     """Raised when the curated dataset cannot be converted into league models."""
@@ -112,6 +121,12 @@ def _add_roles_for_person(
     source_person: SourcePerson,
 ) -> None:
     for source_role in source_person.roles:
+        share_count = getattr(source_role, "share_count", None)
+        if share_count is None:
+            share_count = _SHARE_COUNT_OVERRIDES.get(
+                (league_company.name, league_person.name)
+            )
+
         league_role = LeagueRole(
             person_id=league_person.person_id,
             company_id=league_company.company_id,
@@ -123,6 +138,7 @@ def _add_roles_for_person(
             bonus=source_role.bonus,
             stock_awards=source_role.stock_awards,
             signing_bonus=source_role.signing_bonus,
+            share_count=share_count,
         )
         league.add_role(league_role)
 

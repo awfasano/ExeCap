@@ -3,6 +3,8 @@ import json
 import os
 from typing import List, Optional, Set
 
+from flask import Flask, jsonify, render_template, request, url_for
+
 from company_folder_loader import CompanyFolderLoader
 from fortune10_loader import Fortune10LoadError, load_fortune10_league
 from models import LeagueManager
@@ -356,6 +358,7 @@ def company_detail(company_id):
                     'bonus': role.bonus,
                     'stock_awards': role.stock_awards,
                     'signing_bonus': role.signing_bonus,
+                    'share_count': role.share_count,
                     'total_compensation': role.total_compensation,
                     'cap_hit_pct': (role.total_compensation / company.exec_budget * 100),
                     'year': role.year
@@ -391,6 +394,7 @@ def company_detail(company_id):
                 'bonus': role.bonus,
                 'stock_awards': role.stock_awards,
                 'signing_bonus': role.signing_bonus,
+                'share_count': role.share_count,
                 'total_compensation': role.total_compensation,
                 'cap_hit_pct': data['cap_hit_pct'],
                 'year': role.year
@@ -413,6 +417,7 @@ def company_detail(company_id):
                 'bonus': role.bonus,
                 'stock_awards': role.stock_awards,
                 'signing_bonus': role.signing_bonus,
+                'share_count': role.share_count,
                 'total_compensation': role.total_compensation,
                 'cap_hit_pct': data['cap_hit_pct'],
                 'year': role.year
@@ -472,6 +477,7 @@ def person_detail(person_id):
                 'bonus': role.bonus,
                 'stock_awards': role.stock_awards,
                 'signing_bonus': role.signing_bonus,
+                'share_count': role.share_count,
                 'total_compensation': role.total_compensation
             })
 
@@ -552,6 +558,7 @@ def free_agents():
                 'education': person.education,
                 'last_title': last_role.title if last_role else 'N/A',
                 'last_compensation': last_comp,
+                'share_count': last_role.share_count if last_role else None,
                 'previous_companies': person.previous_companies,
                 'last_year': last_role.year if last_role else None
             })

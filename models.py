@@ -17,6 +17,7 @@ class Role:
     bonus: float = 0
     stock_awards: float = 0
     signing_bonus: float = 0
+    share_count: Optional[float] = None
 
     @property
     def total_compensation(self) -> float:
@@ -37,6 +38,7 @@ class Role:
             'bonus': self.bonus,
             'stock_awards': self.stock_awards,
             'signing_bonus': self.signing_bonus,
+            'share_count': self.share_count,
             'total_compensation': self.total_compensation
         }
 
