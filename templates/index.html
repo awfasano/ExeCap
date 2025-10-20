@@ -1,38 +1,184 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard | Executive Pay Tracker{% endblock %}
+{% block title %}League Overview | ExecuCap{% endblock %}
 
 {% block content %}
-    <h1>Executive Compensation Dashboard</h1>
-    <p>An overview of the top executive earners and company spending.</p>
-
-    <div class="dashboard-grid">
-        <div class="dashboard-card">
-            <h3>Top 5 Highest Paid Roles (2024)</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Executive</th>
-                        <th>Role</th>
-                        <th>Total Compensation</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for earner in top_earners %}
-                    <tr>
-                        <td><a href="{{ url_for('person_detail', person_id=earner.person_id) }}">{{ earner.person_name }}</a></td>
-                        <td>{{ earner.title }}, {{ earner.company_name }}</td>
-                        <td>${{ "{:,.0f}".format(earner.total_compensation) }}</td>
-                    </tr>
+    <section class="hero-card">
+        <div class="hero-headline">
+            <div>
+                <p class="hero-eyebrow">Executive Salary Cap League</p>
+                <h1>Track the Corporate Front Office Offseason</h1>
+                <p class="hero-subcopy">
+                    Dive into cap space, blockbuster compensation packages, and front office moves just like an NFL salary cap hub.
+                </p>
+            </div>
+            <form class="season-switcher" method="get">
+                <label for="season-select">Season</label>
+                <select id="season-select" name="year" onchange="this.form.submit()">
+                    {% for year in available_years %}
+                        <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>
+                            {{ year }}
+                        </option>
                     {% endfor %}
-                </tbody>
-            </table>
+                </select>
+            </form>
         </div>
+        <div class="hero-stats">
+            <div class="hero-stat">
+                <span class="stat-label">Teams Tracked</span>
+                <span class="stat-value">{{ league_summary.teams }}</span>
+            </div>
+            <div class="hero-stat">
+                <span class="stat-label">League Cap Budget</span>
+                <span class="stat-value">${{ "{:,.0f}".format(league_summary.total_budget) }}</span>
+            </div>
+            <div class="hero-stat">
+                <span class="stat-label">Spent To-Date</span>
+                <span class="stat-value">${{ "{:,.0f}".format(league_summary.total_spent) }}</span>
+            </div>
+            <div class="hero-stat">
+                <span class="stat-label">Avg Utilization</span>
+                <span class="stat-value">{{ "{:.1f}".format(league_summary.avg_utilization) }}%</span>
+            </div>
+        </div>
+    </section>
 
-        <div class="dashboard-card">
-            <h3>Quick Links</h3>
-            <a class="button-link" href="{{ url_for('company_list') }}">View All Company Payrolls</a>
-            <!-- Add more links as your app grows -->
-        </div>
+    <div class="home-grid">
+        <section class="cap-leaderboard">
+            <h2>Cap Space Leaderboard</h2>
+            <p>Who's primed to make the next headline hire?</p>
+            <ul>
+                {% for team in cap_space_leaders %}
+                <li>
+                    <div class="team-meta">
+                        <span class="team-rank">{{ loop.index }}</span>
+                        <div>
+                            <a href="{{ url_for('company_detail', company_id=team.company_id) }}" class="team-name">
+                                {{ team.company.name }}
+                            </a>
+                            <span class="team-ticker">{{ team.company.ticker }}</span>
+                        </div>
+                    </div>
+                    <div class="team-cap-bar">
+                        <div class="cap-bar">
+                            <div class="cap-fill {% if team.cap_info.utilization_pct > 100 %}over-budget{% endif %}"
+                                 style="width: {{ [team.cap_info.utilization_pct, 100]|min }}%">
+                            </div>
+                        </div>
+                        <div class="team-cap-numbers">
+                            <span class="num-positive">Cap Space: ${{ "{:,.0f}".format(team.cap_info.remaining) }}</span>
+                            <span class="num-muted">Utilization: {{ "{:.1f}".format(team.cap_info.utilization_pct) }}%</span>
+                        </div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </section>
+
+        <section class="top-contracts">
+            <h2>Marquee Contracts</h2>
+            <p>The biggest deals of the {{ selected_year }} season.</p>
+            <div class="top-contracts-list">
+                {% for earner in top_earners %}
+                <article class="contract-card">
+                    <header>
+                        <a href="{{ url_for('person_detail', person_id=earner.person_id) }}" class="contract-name">
+                            {{ earner.person_name }}
+                        </a>
+                        <span class="contract-value">${{ "{:,.0f}".format(earner.total_compensation) }}</span>
+                    </header>
+                    <div class="contract-meta">
+                        <span class="meta-role">{{ earner.title }}</span>
+                        <span class="meta-team">{{ earner.company_name }}</span>
+                    </div>
+                    <footer>
+                        <span class="meta-experience">{{ earner.experience }} yrs experience</span>
+                        <span class="meta-season">{{ earner.year }} Season</span>
+                    </footer>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="position-leaders">
+            <h2>Position Salary Leaders</h2>
+            <p>Highest total compensation by key front office roles.</p>
+            {% if position_leaders %}
+            <div class="position-leader-grid">
+                {% for leader in position_leaders %}
+                <article class="position-leader-card">
+                    <header>
+                        <span class="position-tag">{{ leader.label }}</span>
+                        <span class="position-value">${{ "{:,.0f}".format(leader.total_compensation) }}</span>
+                    </header>
+                    <div class="position-body">
+                        <a href="{{ url_for('person_detail', person_id=leader.person_id) }}" class="position-name">
+                            {{ leader.person_name }}
+                        </a>
+                        <span class="position-title">{{ leader.title }}</span>
+                    </div>
+                    <footer>
+                        <a href="{{ url_for('company_detail', company_id=leader.company_id) }}" class="position-team">
+                            {{ leader.company_name }} ({{ leader.company_ticker }})
+                        </a>
+                    </footer>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <h3>No role leaders yet</h3>
+                <p>Load executive data to surface the top earners by position.</p>
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="over-budget-watch">
+            <h2>Over Budget Watchlist</h2>
+            <p>Teams navigating luxury tax territory.</p>
+            {% if over_budget_teams %}
+            <ul>
+                {% for team in over_budget_teams %}
+                <li>
+                    <div>
+                        <a href="{{ url_for('company_detail', company_id=team.company_id) }}" class="team-name">
+                            {{ team.company.name }}
+                        </a>
+                        <span class="team-ticker">{{ team.company.ticker }}</span>
+                    </div>
+                    <div class="over-budget-metrics">
+                        <span class="metric-over">Over Cap by ${{ "{:,.0f}".format(abs(team.cap_info.remaining)) }}</span>
+                        <span class="metric-util">Utilization {{ "{:.1f}".format(team.cap_info.utilization_pct) }}%</span>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="empty-state">
+                <h3>All clear!</h3>
+                <p>No teams are over their executive cap right now.</p>
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="quick-links">
+            <h2>Front Office Control Room</h2>
+            <div class="quick-links-grid">
+                <a class="quick-link-card" href="{{ url_for('company_list') }}">
+                    <span class="emoji">🏢</span>
+                    <div>
+                        <h3>Team Cap Tables</h3>
+                        <p>Compare cap usage and roster counts across every company.</p>
+                    </div>
+                </a>
+                <a class="quick-link-card" href="{{ url_for('free_agents') }}">
+                    <span class="emoji">🎯</span>
+                    <div>
+                        <h3>Free Agent Big Board</h3>
+                        <p>Scout executives ready to sign the next blockbuster deal.</p>
+                    </div>
+                </a>
+            </div>
+        </section>
     </div>
 {% endblock %}

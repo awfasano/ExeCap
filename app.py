@@ -10,6 +10,50 @@ BUCKET_NAME = "execap"  # Your GCS bucket name
 CREDENTIALS_PATH = None  # Use None for default credentials (uses Application Default Credentials)
 DEFAULT_YEAR = "2024"  # Default year to load
 
+# Role archetypes for position leader board
+ROLE_CATEGORY_RULES = [
+    {
+        'label': 'Chairman',
+        'keywords': ['chairman', 'chairperson', 'chairwoman'],
+        'position_types': ['Board']
+    },
+    {
+        'label': 'Board Director',
+        'keywords': ['director'],
+        'position_types': ['Board']
+    },
+    {
+        'label': 'Chief Executive Officer',
+        'keywords': ['chief executive officer', 'ceo'],
+        'position_types': ['C-Suite']
+    },
+    {
+        'label': 'Chief Financial Officer',
+        'keywords': ['chief financial officer', 'cfo'],
+        'position_types': ['C-Suite']
+    },
+    {
+        'label': 'Chief Operating Officer',
+        'keywords': ['chief operating officer', 'coo'],
+        'position_types': ['C-Suite']
+    },
+    {
+        'label': 'Executive Vice President',
+        'keywords': ['executive vice president', 'evp'],
+        'position_types': ['C-Suite']
+    },
+    {
+        'label': 'Vice President',
+        'keywords': ['vice president'],
+        'position_types': ['C-Suite']
+    },
+    {
+        'label': 'President',
+        'keywords': ['president'],
+        'position_types': ['C-Suite', 'Board']
+    }
+]
+
 # Initialize the Excel loader
 folder_loader = CompanyFolderLoader(BUCKET_NAME, CREDENTIALS_PATH)
 
@@ -88,9 +132,80 @@ def index():
             'executive_count': company.executive_count
         })
 
+    # League-wide summary stats
+    total_budget = sum(team['cap_info']['budget'] for team in league_standings) or 0
+    total_spent = sum(team['cap_info']['total_spent'] for team in league_standings) or 0
+    league_summary = {
+        'teams': len(league_standings),
+        'total_budget': total_budget,
+        'total_spent': total_spent,
+        'avg_utilization': (total_spent / total_budget * 100) if total_budget else 0,
+        'over_budget_count': len([team for team in league_standings if team['cap_info']['utilization_pct'] > 100])
+    }
+
+    # Cap space leaders and teams over budget (limit for homepage display)
+    cap_space_leaders = sorted(
+        league_standings,
+        key=lambda team: team['cap_info']['remaining'],
+        reverse=True
+    )[:5]
+    over_budget_teams = sorted(
+        [team for team in league_standings if team['cap_info']['utilization_pct'] > 100],
+        key=lambda team: team['cap_info']['utilization_pct'],
+        reverse=True
+    )[:5]
+
+    # Position leaders (highest total comp per archetype)
+    category_leaders = {rule['label']: None for rule in ROLE_CATEGORY_RULES}
+    for company in league_manager.companies.values():
+        for role in company.all_roles:
+            if year and str(role.year) != year:
+                continue
+
+            title_lower = role.title.lower()
+            for rule in ROLE_CATEGORY_RULES:
+                allowed_types = rule.get('position_types')
+                if allowed_types and role.position_type not in allowed_types:
+                    continue
+
+                if any(keyword in title_lower for keyword in rule['keywords']):
+                    person = company.get_person_by_id(role.person_id) or league_manager.get_person(role.person_id)
+                    if not person:
+                        continue
+
+                    current_leader = category_leaders.get(rule['label'])
+                    if (current_leader is None or
+                            role.total_compensation > current_leader['role'].total_compensation):
+                        category_leaders[rule['label']] = {
+                            'person': person,
+                            'company': company,
+                            'role': role
+                        }
+                    break
+
+    position_leaders = []
+    for rule in ROLE_CATEGORY_RULES:
+        leader = category_leaders.get(rule['label'])
+        if not leader:
+            continue
+        position_leaders.append({
+            'label': rule['label'],
+            'person_id': leader['person'].person_id,
+            'person_name': leader['person'].name,
+            'company_name': leader['company'].name,
+            'company_id': leader['company'].company_id,
+            'company_ticker': leader['company'].ticker,
+            'title': leader['role'].title,
+            'total_compensation': leader['role'].total_compensation
+        })
+
     return render_template('index.html',
                            top_earners=top_earners[:5],
                            league_standings=league_standings,
+                           league_summary=league_summary,
+                           cap_space_leaders=cap_space_leaders,
+                           over_budget_teams=over_budget_teams,
+                           position_leaders=position_leaders,
                            selected_year=year,
                            available_years=available_years)
 
