@@ -147,7 +147,7 @@
                         <span class="team-ticker">{{ team.company.ticker }}</span>
                     </div>
                     <div class="over-budget-metrics">
-                        <span class="metric-over">Over Cap by ${{ "{:,.0f}".format(abs(team.cap_info.remaining)) }}</span>
+                        <span class="metric-over">Over Cap by ${{ "{:,.0f}".format((-team.cap_info.remaining)) }}</span>
                         <span class="metric-util">Utilization {{ "{:.1f}".format(team.cap_info.utilization_pct) }}%</span>
                     </div>
                 </li>
