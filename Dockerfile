@@ -29,6 +29,7 @@ EXPOSE 8080
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 ENV PORT=8080
+ENV PYTHONPATH=/app
 
 # Use gunicorn to serve the Flask app
 CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 app:app
