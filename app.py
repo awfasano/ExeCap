@@ -509,9 +509,10 @@ def person_detail(person_id):
     person_roles.sort(key=lambda item: item['year'], reverse=True)
 
     all_records = league_manager.get_compensation_for_person(person_id)
-    total_earnings = sum(rec.total_comp_usd for rec in (compensation_records if year_date else all_records))
-    years_active = len({rec.fiscal_year_end.year for rec in (compensation_records if year_date else all_records)})
-    companies_count = len({rec.company_id for rec in (compensation_records if year_date else all_records)})
+    record_set = compensation_records if year_date else all_records
+    total_earnings = sum(rec.total_comp_usd for rec in record_set)
+    years_active = len({rec.fiscal_year_end.year for rec in record_set})
+    companies_count = len({rec.company_id for rec in record_set})
     highest_single_year = max((rec.total_comp_usd for rec in all_records), default=0)
     avg_annual = (total_earnings / years_active) if years_active else 0
 

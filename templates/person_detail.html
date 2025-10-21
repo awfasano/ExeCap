@@ -123,22 +123,60 @@
                 {% set total_bonus = roles|sum(attribute='bonus') %}
                 {% set total_stock = roles|sum(attribute='stock_awards') %}
                 {% set total_signing = roles|sum(attribute='signing_bonus') %}
+                {% set total_earnings = career_stats.total_earnings %}
+                {% set divisor = total_earnings if total_earnings else 1 %}
 
                 <div style="display: flex; justify-content: space-between;">
                     <span>Base Salary:</span>
-                    <span class="salary-amount">${{ "{:,.0f}".format(total_base) }} ({{ "{:.1f}".format((total_base/career_stats.total_earnings)*100) }}%)</span>
+                    <span class="salary-amount">
+                        ${{ "{:,.0f}".format(total_base) }}
+                        (
+                        {% if total_earnings %}
+                            {{ "{:.1f}".format((total_base/divisor)*100) }}%
+                        {% else %}
+                            0.0%
+                        {% endif %}
+                        )
+                    </span>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
                     <span>Performance Bonus:</span>
-                    <span class="salary-amount">${{ "{:,.0f}".format(total_bonus) }} ({{ "{:.1f}".format((total_bonus/career_stats.total_earnings)*100) }}%)</span>
+                    <span class="salary-amount">
+                        ${{ "{:,.0f}".format(total_bonus) }}
+                        (
+                        {% if total_earnings %}
+                            {{ "{:.1f}".format((total_bonus/divisor)*100) }}%
+                        {% else %}
+                            0.0%
+                        {% endif %}
+                        )
+                    </span>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
                     <span>Stock Awards:</span>
-                    <span class="cap-hit">${{ "{:,.0f}".format(total_stock) }} ({{ "{:.1f}".format((total_stock/career_stats.total_earnings)*100) }}%)</span>
+                    <span class="cap-hit">
+                        ${{ "{:,.0f}".format(total_stock) }}
+                        (
+                        {% if total_earnings %}
+                            {{ "{:.1f}".format((total_stock/divisor)*100) }}%
+                        {% else %}
+                            0.0%
+                        {% endif %}
+                        )
+                    </span>
                 </div>
                 <div style="display: flex; justify-content: space-between;">
                     <span>Signing Bonuses:</span>
-                    <span class="salary-amount">${{ "{:,.0f}".format(total_signing) }} ({{ "{:.1f}".format((total_signing/career_stats.total_earnings)*100) }}%)</span>
+                    <span class="salary-amount">
+                        ${{ "{:,.0f}".format(total_signing) }}
+                        (
+                        {% if total_earnings %}
+                            {{ "{:.1f}".format((total_signing/divisor)*100) }}%
+                        {% else %}
+                            0.0%
+                        {% endif %}
+                        )
+                    </span>
                 </div>
             </div>
         </div>
