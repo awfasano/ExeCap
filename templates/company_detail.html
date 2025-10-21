@@ -148,6 +148,54 @@
         </div>
     </section>
 
+    {% if ownership_rows %}
+    <section class="team-card full">
+        <header class="team-card-header">
+            <span class="icon">🧾</span>
+            <div>
+                <h3>Beneficial Ownership Ledger</h3>
+                <p>Directors and executives with disclosed holdings</p>
+            </div>
+        </header>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Holder</th>
+                        <th>Role</th>
+                        <th>Total Shares</th>
+                        <th>Sole Voting</th>
+                        <th>Shared / 60d</th>
+                        <th>% of Class</th>
+                        <th>As of</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in ownership_rows %}
+                    <tr>
+                        <td>{{ record.holder_name }}</td>
+                        <td>{{ record.role }}</td>
+                        <td class="salary-amount">{{ "{:,.0f}".format(record.total_shares) }}</td>
+                        <td>{{ "{:,.0f}".format(record.sole_voting_power or 0) }}</td>
+                        <td>{{ "{:,.0f}".format(record.shared_voting_power or 0) }}</td>
+                        <td>
+                            {% if record.percent_of_class %}
+                                {{ "{:.3f}".format(record.percent_of_class) }}%
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td>{{ {{ record.as_of_date }} }}</td>
+                        <td>{{ record.notes or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
     <section class="team-card full chart-card">
         <header class="team-card-header">
             <span class="icon">📈</span>

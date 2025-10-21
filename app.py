@@ -286,6 +286,9 @@ def index():
         'total_exec_spend': total_exec_spend,
         'total_director_spend': total_director_spend,
         'avg_exec_spend': (total_exec_spend / len(company_rows)) if company_rows else 0,
+        'total_director_shares': total_director_shares,
+        'total_exec_shares': total_exec_shares,
+        'total_insider_shares': total_director_shares + total_exec_shares,
     }
 
     return render_template(
@@ -471,15 +474,16 @@ def company_detail(company_id):
     director_count = len({record.person_id for record in director_comp_records})
     director_avg_total = (director_total / director_count) if director_count else 0
 
-    ownership_records = [
+    raw_ownership_records = [
         record for record in league_manager.beneficial_ownership
         if record.company_id == company_id and (not year_date or record.as_of_date.year == year_date.year)
     ]
+    ownership_rows = []
     exec_person_ids = {item['person_id'] for item in c_suite}
     director_shares = 0
     exec_shares = 0
     as_of_dates = set()
-    for record in ownership_records:
+    for record in raw_ownership_records:
         person = league_manager.get_person(record.person_id)
         if record.as_of_date:
             as_of_dates.add(record.as_of_date)
@@ -487,6 +491,16 @@ def company_detail(company_id):
             director_shares += record.total_shares
         if (person and person.is_executive) or record.person_id in exec_person_ids:
             exec_shares += record.total_shares
+        ownership_rows.append({
+            'holder_name': person.full_name if person else (record.person_id or '—'),
+            'role': record.role,
+            'total_shares': record.total_shares,
+            'sole_voting_power': record.sole_voting_power,
+            'shared_voting_power': record.shared_voting_power,
+            'percent_of_class': record.percent_of_class,
+            'as_of_date': record.as_of_date.isoformat() if record.as_of_date else '—',
+            'notes': record.notes,
+        })
 
     ownership_summary = {
         'director_shares': director_shares,
@@ -517,6 +531,7 @@ def company_detail(company_id):
         director_comp_summary=director_comp_summary,
         company_summary=company_summary,
         ownership_summary=ownership_summary,
+        ownership_rows=ownership_rows,
         all_executives=all_executives,
         chart_labels=json.dumps(chart_labels),
         chart_data=json.dumps(chart_data),

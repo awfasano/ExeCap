@@ -29,16 +29,20 @@
                 <span class="stat-value">{{ summary_metrics.companies }}</span>
             </div>
             <div class="hero-stat">
-                <span class="stat-label">Total Executive Spend</span>
+                <span class="stat-label">Executive Payroll</span>
                 <span class="stat-value">${{ "{:,.0f}".format(summary_metrics.total_exec_spend) }}</span>
             </div>
             <div class="hero-stat">
-                <span class="stat-label">Total Director Spend</span>
+                <span class="stat-label">Director Payroll</span>
                 <span class="stat-value">${{ "{:,.0f}".format(summary_metrics.total_director_spend) }}</span>
             </div>
             <div class="hero-stat">
-                <span class="stat-label">Avg Exec Spend / Team</span>
-                <span class="stat-value">${{ "{:,.0f}".format(summary_metrics.avg_exec_spend) }}</span>
+                <span class="stat-label">Insider Shares (Exec)</span>
+                <span class="stat-value">{{ "{:,.0f}".format(summary_metrics.total_exec_shares) }}</span>
+            </div>
+            <div class="hero-stat">
+                <span class="stat-label">Insider Shares (Board)</span>
+                <span class="stat-value">{{ "{:,.0f}".format(summary_metrics.total_director_shares) }}</span>
             </div>
         </div>
     </section>
