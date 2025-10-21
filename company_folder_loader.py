@@ -97,6 +97,20 @@ def _get_first(row: Dict[str, str], keys: Iterable[str], default=None):
     return default
 
 
+def _get_float(row: Dict[str, str], *keys: str, default: float = 0.0) -> float:
+    for key in keys:
+        if key in row and row[key] not in (None, ""):
+            return _to_float(row[key])
+    return default
+
+
+def _get_int(row: Dict[str, str], *keys: str, default: int = 0) -> int:
+    for key in keys:
+        if key in row and row[key] not in (None, ""):
+            return _to_int(row[key])
+    return default
+
+
 class CompanyFolderLoader:
     """Load CSV data from company/year organized folders in GCS bucket."""
 
@@ -287,28 +301,48 @@ class CompanyFolderLoader:
             person = self._ensure_person(
                 row.get("person_id"),
                 full_name,
-                current_title=row.get("current_title", row.get("title", "")),
+                current_title=_get_first(row, ["current_title", "title", "position"], default=""),
                 is_executive=True,
                 bio_short=row.get("bio_short"),
                 linkedin_url=row.get("linkedin_url"),
                 photo_url=row.get("photo_url"),
-                years_experience=_to_int(row.get("years_experience")),
-                education=row.get("education"),
-                status=row.get("status"),
+                years_experience=_get_int(row, "years_experience", "experience_years"),
+                education=_get_first(row, ["education", "education_background"]),
+                status=_get_first(row, ["status", "employment_status"]),
             )
             fiscal_year = _parse_date(row.get("fiscal_year_end"), fallback=date(int(year), 12, 31))
+
+            salary_usd = _get_float(row, "salary_usd", "base_salary_usd", "base_salary", "salary")
+            bonus_usd = _get_float(row, "bonus_usd", "cash_bonus_usd", "bonus", "cash_bonus")
+            stock_awards_usd = _get_float(row, "stock_awards_usd", "stock_awards_fair_value_usd", "stock_awards", "stock_awards_value")
+            option_awards_usd = _get_float(row, "option_awards_usd", "options_awards_usd", "option_awards", "options_awards")
+            non_equity_usd = _get_float(row, "non_equity_incentive_usd", "non_equity_incentive_plan_usd", "non_equity_incentive")
+            pension_change_usd = _get_float(row, "pension_change_usd", "change_in_pension_and_defcomp_earnings_usd", "pension_change")
+            all_other_usd = _get_float(row, "all_other_comp_usd", "all_other_compensation_usd", "other_compensation_usd", "all_other_comp")
+            total_comp = _get_float(row, "total_comp_usd", "total_compensation_usd", "total_compensation")
+            if total_comp == 0.0:
+                total_comp = (
+                    salary_usd
+                    + bonus_usd
+                    + stock_awards_usd
+                    + option_awards_usd
+                    + non_equity_usd
+                    + pension_change_usd
+                    + all_other_usd
+                )
+
             record = ExecutiveCompensation(
                 company_id=company.company_id,
                 person_id=person.person_id,
                 fiscal_year_end=fiscal_year or date(int(year), 12, 31),
-                salary_usd=_to_float(row.get("salary_usd")),
-                bonus_usd=_to_float(row.get("bonus_usd")),
-                stock_awards_usd=_to_float(row.get("stock_awards_usd")),
-                option_awards_usd=_to_float(row.get("option_awards_usd")),
-                non_equity_incentive_usd=_to_float(row.get("non_equity_incentive_usd")),
-                pension_change_usd=_to_float(row.get("pension_change_usd")),
-                all_other_comp_usd=_to_float(row.get("all_other_comp_usd")),
-                total_comp_usd=_to_float(row.get("total_comp_usd", row.get("total_compensation_usd"))),
+                salary_usd=salary_usd,
+                bonus_usd=bonus_usd,
+                stock_awards_usd=stock_awards_usd,
+                option_awards_usd=option_awards_usd,
+                non_equity_incentive_usd=non_equity_usd,
+                pension_change_usd=pension_change_usd,
+                all_other_comp_usd=all_other_usd,
+                total_comp_usd=total_comp,
                 source=row.get("source", f"{year} Proxy Statement"),
             )
             self.league_manager.add_executive_comp(record)
@@ -349,18 +383,18 @@ class CompanyFolderLoader:
             person = self._ensure_person(
                 row.get("person_id"),
                 full_name,
-                current_title=row.get("current_title", row.get("title", "")),
+                current_title=_get_first(row, ["current_title", "role", "title"], default=""),
                 is_executive=_to_bool(row.get("is_executive")),
                 is_director=_to_bool(row.get("is_director")),
             )
             record = BeneficialOwnershipRecord(
                 company_id=company.company_id,
                 person_id=person.person_id,
-                role=row.get("role", person.current_title),
-                total_shares=_to_int(row.get("total_shares")),
-                sole_voting_power=_to_int(row.get("sole_voting_power")),
-                shared_voting_power=_to_int(row.get("shared_voting_power")),
-                percent_of_class=_to_float(row.get("percent_of_class")),
+                role=_get_first(row, ["role", "title"], default=person.current_title),
+                total_shares=_get_int(row, "total_shares", "total_shares_owned"),
+                sole_voting_power=_get_int(row, "sole_voting_power", "direct_or_indirect_sole_voting"),
+                shared_voting_power=_get_int(row, "shared_voting_power", "indirect_shared_voting"),
+                percent_of_class=_get_float(row, "percent_of_class", "percent_class"),
                 as_of_date=_parse_date(row.get("as_of_date"), fallback=company.fiscal_year_end) or company.fiscal_year_end,
                 notes=row.get("notes"),
             )
@@ -375,7 +409,7 @@ class CompanyFolderLoader:
             person = self._ensure_person(
                 row.get("person_id"),
                 full_name,
-                current_title=row.get("role", row.get("title", "Director")),
+                current_title=_get_first(row, ["role", "title"], default="Director"),
                 is_director=True,
             )
             fiscal_year = _parse_date(row.get("fiscal_year_end"), fallback=company.fiscal_year_end)
@@ -383,10 +417,10 @@ class CompanyFolderLoader:
                 company_id=company.company_id,
                 person_id=person.person_id,
                 fiscal_year_end=fiscal_year or company.fiscal_year_end,
-                fees_cash_usd=_to_float(row.get("fees_cash_usd")),
-                stock_awards_usd=_to_float(row.get("stock_awards_usd")),
-                all_other_comp_usd=_to_float(row.get("all_other_comp_usd")),
-                total_usd=_to_float(row.get("total_usd", row.get("total_comp_usd"))),
+                fees_cash_usd=_get_float(row, "fees_cash_usd", "cash_fees_usd", "cash_retainers_usd"),
+                stock_awards_usd=_get_float(row, "stock_awards_usd", "stock_grant_usd"),
+                all_other_comp_usd=_get_float(row, "all_other_comp_usd", "all_other_compensation_usd"),
+                total_usd=_get_float(row, "total_usd", "total_comp_usd", "total_compensation_usd"),
                 source=row.get("source", f"{company.fiscal_year_end.year} Director Compensation"),
             )
             self.league_manager.add_director_comp(record)
@@ -400,18 +434,18 @@ class CompanyFolderLoader:
             person = self._ensure_person(
                 row.get("person_id"),
                 full_name,
-                current_title=row.get("role", row.get("title", "Director")),
+                current_title=_get_first(row, ["role", "title"], default="Director"),
                 is_director=True,
             )
             profile = DirectorProfile(
                 company_id=company.company_id,
                 person_id=person.person_id,
-                role=row.get("role", person.current_title),
-                independent=_to_bool(row.get("independent", True)),
-                director_since=_to_int(row.get("director_since")) or None,
-                lead_independent_director=_to_bool(row.get("lead_independent_director")),
+                role=_get_first(row, ["role", "title"], default=person.current_title),
+                independent=_to_bool(row.get("independent", row.get("is_independent", True))),
+                director_since=_get_int(row, "director_since", default=None) or None,
+                lead_independent_director=_to_bool(row.get("lead_independent_director", row.get("lead_independent", False))),
                 committees=row.get("committees"),
-                primary_occupation=row.get("primary_occupation"),
+                primary_occupation=row.get("primary_occupation", row.get("occupation")),
                 other_public_boards=row.get("other_public_boards"),
             )
             self.league_manager.add_director_profile(profile)
