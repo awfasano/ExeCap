@@ -148,6 +148,56 @@
         </div>
     </section>
 
+    <section class="insights-grid">
+        <div class="team-card chart-card">
+            <header class="team-card-header">
+                <span class="icon">&#128202;</span>
+                <div>
+                    <h3>Payroll Mix</h3>
+                    <p>Executive vs. board spend for {{ selected_year }}</p>
+                </div>
+            </header>
+            <div class="chart-shell chart-shell--compact">
+                <canvas id="compMixChart"></canvas>
+            </div>
+            <div class="chart-footnote">
+                <span class="muted-small">Exec Payroll</span>
+                <strong>${{ "{:,.0f}".format(company_summary.exec_total) }}</strong>
+                <span class="muted-small">Director Payroll</span>
+                <strong>${{ "{:,.0f}".format(company_summary.director_total) }}</strong>
+            </div>
+        </div>
+
+        <div class="team-card chart-card">
+            <header class="team-card-header">
+                <span class="icon">&#128100;</span>
+                <div>
+                    <h3>Insider Ownership</h3>
+                    <p>Executive vs. board voting power</p>
+                </div>
+            </header>
+            <div class="chart-shell chart-shell--compact">
+                <canvas id="ownershipMixChart"></canvas>
+            </div>
+            <div class="chart-footnote">
+                <span class="muted-small">As of {{ ownership_summary.as_of }}</span>
+            </div>
+        </div>
+
+        <div class="team-card chart-card">
+            <header class="team-card-header">
+                <span class="icon">&#128201;</span>
+                <div>
+                    <h3>Top Holders</h3>
+                    <p>Largest disclosed insiders by shares</p>
+                </div>
+            </header>
+            <div class="chart-shell chart-shell--compact">
+                <canvas id="topOwnersChart"></canvas>
+            </div>
+        </div>
+    </section>
+
     {% if ownership_rows %}
     <section class="team-card full">
         <header class="team-card-header">
@@ -362,14 +412,20 @@
 
     <script>
         // Chart.js implementation for compensation visualization
+        const execBarLabels = {{ chart_labels|safe }};
+        const execBarValues = {{ chart_data|safe }};
+        const compMixData = {{ comp_mix_chart|tojson }};
+        const ownershipMixData = {{ ownership_mix_chart|tojson }};
+        const topOwnerChartData = {{ top_owner_chart|tojson }};
+
         const ctx = document.getElementById('compensationChart').getContext('2d');
-        const chart = new Chart(ctx, {
+        new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: {{ chart_labels|safe }},
+                labels: execBarLabels,
                 datasets: [{
                     label: 'Total Compensation (USD)',
-                    data: {{ chart_data|safe }},
+                    data: execBarValues,
                     backgroundColor: 'rgba(244, 63, 94, 0.78)',
                     borderColor: 'rgba(244, 63, 94, 1)',
                     borderWidth: 1.5,
@@ -423,5 +479,105 @@
                 }
             }
         });
+
+        const createDoughnut = (canvasId, labels, values, colors) => {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return null;
+            return new Chart(canvas.getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: colors,
+                        borderColor: colors.map(color => color.replace('0.8', '1').replace('0.75', '1')),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#cbd5f5' }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (context) => `${context.label}: ${context.parsed.toLocaleString()}`
+                            }
+                        }
+                    },
+                    cutout: '55%'
+                }
+            });
+        };
+
+        if (compMixData.values.some(value => value)) {
+            createDoughnut(
+                'compMixChart',
+                compMixData.labels,
+                compMixData.values,
+                ['rgba(244, 63, 94, 0.8)', 'rgba(59, 130, 246, 0.8)']
+            );
+        }
+
+        if (ownershipMixData.values.some(value => value)) {
+            createDoughnut(
+                'ownershipMixChart',
+                ownershipMixData.labels,
+                ownershipMixData.values,
+                ['rgba(14, 165, 233, 0.8)', 'rgba(251, 191, 36, 0.8)']
+            );
+        }
+
+        const topOwnersCanvas = document.getElementById('topOwnersChart');
+        if (topOwnersCanvas && topOwnerChartData.labels.length) {
+            new Chart(topOwnersCanvas.getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: topOwnerChartData.labels,
+                    datasets: [{
+                        label: 'Total Shares',
+                        data: topOwnerChartData.shares,
+                        backgroundColor: 'rgba(16, 185, 129, 0.75)',
+                        borderColor: 'rgba(16, 185, 129, 1)',
+                        borderWidth: 1,
+                        borderRadius: 6,
+                        borderSkipped: false
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => {
+                                    const shares = ctx.parsed.x.toLocaleString();
+                                    const pct = topOwnerChartData.percent_of_class[ctx.dataIndex];
+                                    const pctText = pct ? ` (${pct.toFixed(2)}%)` : '';
+                                    return `Shares: ${shares}${pctText}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: '#94a3b8',
+                                callback: (value) => value.toLocaleString()
+                            },
+                            grid: { color: 'rgba(148, 163, 184, 0.1)' }
+                        },
+                        y: {
+                            ticks: { color: '#94a3b8' },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        }
     </script>
 {% endblock %}

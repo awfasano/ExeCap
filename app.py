@@ -603,6 +603,30 @@ def company_detail(company_id):
         'director_count': director_count,
     }
 
+    comp_mix_chart = {
+        'labels': ['Executive Payroll', 'Director Payroll'],
+        'values': [round(exec_total, 2), round(director_total, 2)],
+    }
+
+    ownership_mix_chart = {
+        'labels': ['Executive Insiders', 'Board Insiders'],
+        'values': [exec_shares, director_shares],
+    }
+
+    top_owner_rows = sorted(
+        ownership_rows,
+        key=lambda row: row['total_shares'],
+        reverse=True
+    )[:6]
+    top_owner_chart = {
+        'labels': [row['holder_name'] for row in top_owner_rows],
+        'shares': [row['total_shares'] for row in top_owner_rows],
+        'percent_of_class': [
+            row['percent_of_class'] if row['percent_of_class'] is not None else 0
+            for row in top_owner_rows
+        ],
+    }
+
     return render_template(
         'company_detail.html',
         company=company_dict,
@@ -619,6 +643,9 @@ def company_detail(company_id):
         all_executives=all_executives,
         chart_labels=json.dumps(chart_labels),
         chart_data=json.dumps(chart_data),
+        comp_mix_chart=comp_mix_chart,
+        ownership_mix_chart=ownership_mix_chart,
+        top_owner_chart=top_owner_chart,
         selected_year=year,
         available_years=available_company_years or available_years,
     )
@@ -699,11 +726,21 @@ def person_detail(person_id):
         'years_experience': person.years_experience,
     }
 
+    history_records = sorted(all_records, key=lambda rec: rec.fiscal_year_end)
+    compensation_history_chart = {
+        'labels': [str(rec.fiscal_year_end.year) for rec in history_records],
+        'salary': [rec.salary_usd for rec in history_records],
+        'bonus': [rec.bonus_usd for rec in history_records],
+        'stock': [rec.stock_awards_usd for rec in history_records],
+        'total': [rec.total_comp_usd for rec in history_records],
+    }
+
     return render_template(
         'person_detail.html',
         person=person_dict,
         roles=person_roles,
         career_stats=career_stats,
+        compensation_history_chart=compensation_history_chart,
         selected_year=year if year_date else 'career',
         available_years=person_years,
     )
