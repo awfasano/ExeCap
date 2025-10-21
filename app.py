@@ -377,6 +377,9 @@ def company_detail(company_id):
     compensation_records = league_manager.get_company_compensation(company_id, year_date)
 
     c_suite = []
+    exec_total = 0
+    exec_count = 0
+    exec_experience_values = []
     for record in compensation_records:
         person = league_manager.get_person(record.person_id)
         if not person:
@@ -399,6 +402,10 @@ def company_detail(company_id):
             'cap_hit_pct': (record.total_comp_usd / budget * 100) if budget else 0,
             'year': record.fiscal_year_end.year,
         })
+        exec_total += record.total_comp_usd
+        exec_count += 1
+        if person.years_experience is not None:
+            exec_experience_values.append(person.years_experience)
 
     board_profiles = league_manager.get_director_profiles_for_company(company_id)
     director_comp_records = [
@@ -457,6 +464,47 @@ def company_detail(company_id):
     company_years = {record.fiscal_year_end.year for record in league_manager.get_company_compensation(company_id)}
     available_company_years = sorted({str(yr) for yr in company_years}, reverse=True)
 
+    exec_avg_comp = (exec_total / exec_count) if exec_count else 0
+    exec_avg_experience = (sum(exec_experience_values) / len(exec_experience_values)) if exec_experience_values else None
+
+    director_total = sum(record.total_usd for record in director_comp_records)
+    director_count = len({record.person_id for record in director_comp_records})
+    director_avg_total = (director_total / director_count) if director_count else 0
+
+    ownership_records = [
+        record for record in league_manager.beneficial_ownership
+        if record.company_id == company_id and (not year_date or record.as_of_date.year == year_date.year)
+    ]
+    exec_person_ids = {item['person_id'] for item in c_suite}
+    director_shares = 0
+    exec_shares = 0
+    as_of_dates = set()
+    for record in ownership_records:
+        person = league_manager.get_person(record.person_id)
+        if record.as_of_date:
+            as_of_dates.add(record.as_of_date)
+        if person and person.is_director:
+            director_shares += record.total_shares
+        if (person and person.is_executive) or record.person_id in exec_person_ids:
+            exec_shares += record.total_shares
+
+    ownership_summary = {
+        'director_shares': director_shares,
+        'exec_shares': exec_shares,
+        'total_shares': director_shares + exec_shares,
+        'as_of': max(as_of_dates).isoformat() if as_of_dates else '—'
+    }
+
+    company_summary = {
+        'exec_total': exec_total,
+        'exec_avg_comp': exec_avg_comp,
+        'exec_avg_experience': exec_avg_experience,
+        'exec_count': exec_count,
+        'director_total': director_total,
+        'director_avg_total': director_avg_total,
+        'director_count': director_count,
+    }
+
     return render_template(
         'company_detail.html',
         company=company_dict,
@@ -467,6 +515,8 @@ def company_detail(company_id):
         director_compensation=director_comp_records,
         director_policies=director_policies,
         director_comp_summary=director_comp_summary,
+        company_summary=company_summary,
+        ownership_summary=ownership_summary,
         all_executives=all_executives,
         chart_labels=json.dumps(chart_labels),
         chart_data=json.dumps(chart_data),

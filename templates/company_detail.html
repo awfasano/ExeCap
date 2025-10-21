@@ -1,107 +1,165 @@
 {% extends "base.html" %}
 
-{% block title %}{{ company.name }} - Team Roster & Cap Space{% endblock %}
+{% block title %}{{ company.name }} - Front Office Ledger{% endblock %}
 
 {% block content %}
-    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem;">
-        <div class="company-logo" style="width: 60px; height: 60px; font-size: 1.5rem;">
-            {{ company.ticker_display }}
-        </div>
-        <div>
-            <h1 style="margin: 0;">{{ company.name }}</h1>
-            <p style="margin: 0; font-size: 1.1rem;">{{ company.ticker }} • {{ company.sector }} • Founded {{ company.founded }}</p>
-        </div>
-    </div>
-
-    <!-- Cap Space Overview -->
-    <div class="cap-overview">
-        <div class="cap-card">
-            <h3 style="color: #10b981; margin-top: 0;">💰 Salary Cap Situation</h3>
-            <div class="cap-usage">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                    <span>Budget Utilization</span>
-                    <span class="{% if cap_info.utilization_pct > 100 %}salary-amount{% else %}cap-hit{% endif %}">
-                        {{ "{:.1f}".format(cap_info.utilization_pct) }}%
-                    </span>
-                </div>
-                <div class="cap-bar">
-                    <div class="cap-fill {% if cap_info.utilization_pct > 100 %}over-budget{% endif %}"
-                         style="width: {{ [cap_info.utilization_pct, 100]|min }}%"></div>
-                </div>
+    <section class="team-banner">
+        <div class="team-identity">
+            <div class="team-badge glitch" data-text="{{ company.ticker_display }}">
+                <span>{{ company.ticker_display }}</span>
             </div>
-
-            <div class="cap-stats">
-                <div class="stat-item">
-                    <div class="stat-label">Total Budget</div>
-                    <div class="stat-value">${{ "{:,.0f}".format(cap_info.budget) }}</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Currently Spent</div>
-                    <div class="stat-value">${{ "{:,.0f}".format(cap_info.total_spent) }}</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Cap Space</div>
-                    <div class="stat-value" style="color: {% if cap_info.remaining < 0 %}#ef4444{% else %}#10b981{% endif %}">
-                        {% if cap_info.remaining < 0 %}
-                            -${{ "{:,.0f}".format(abs(cap_info.remaining)) }}
-                        {% else %}
-                            ${{ "{:,.0f}".format(cap_info.remaining) }}
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Total Roster</div>
-                    <div class="stat-value">{{ all_executives|length }}</div>
+            <div class="team-heading">
+                <h1>{{ company.name }}</h1>
+                <p class="team-subline">{{ company.ticker }} • {{ company.sector }} • Founded {{ company.founded }}</p>
+                <div class="team-tags">
+                    <span class="team-tag">Fiscal Year End {{ company.fiscal_year_end.strftime('%Y-%m-%d') }}</span>
+                    {% if company.source_url %}
+                        <span class="team-tag"><a href="{{ company.source_url }}" target="_blank">Proxy Source</a></span>
+                    {% endif %}
+                    {% if company.revenue %}
+                        <span class="team-tag">Revenue ${{ "{:,.1f}".format(company.revenue / 1_000_000_000) }}B</span>
+                    {% endif %}
                 </div>
             </div>
         </div>
+        <div class="team-statsbar">
+            <div class="team-stat">
+                <span class="team-stat-label">Budget Utilization</span>
+                <span class="team-stat-value {% if cap_info.utilization_pct > 100 %}danger{% endif %}">{{ "{:.1f}".format(cap_info.utilization_pct) }}%</span>
+            </div>
+            <div class="team-stat">
+                <span class="team-stat-label">Cap Remaining</span>
+                <span class="team-stat-value {% if cap_info.remaining < 0 %}danger{% endif %}">
+                    {% if cap_info.remaining < 0 %}
+                        -${{ "{:,.0f}".format(abs(cap_info.remaining)) }}
+                    {% else %}
+                        ${{ "{:,.0f}".format(cap_info.remaining) }}
+                    {% endif %}
+                </span>
+            </div>
+            <div class="team-stat">
+                <span class="team-stat-label">Exec Payroll</span>
+                <span class="team-stat-value">${{ "{:,.0f}".format(company_summary.exec_total) }}</span>
+            </div>
+            <div class="team-stat">
+                <span class="team-stat-label">Directors Payroll</span>
+                <span class="team-stat-value">${{ "{:,.0f}".format(company_summary.director_total) }}</span>
+            </div>
+        </div>
+    </section>
 
-        <div class="cap-card">
-            <h3 style="color: #3b82f6; margin-top: 0;">📈 Company Metrics</h3>
-            <div class="cap-stats">
-                <div class="stat-item">
-                    <div class="stat-label">Market Cap</div>
-                    <div class="stat-value">
+    <section class="team-grid">
+        <div class="team-card large">
+            <header class="team-card-header">
+                <span class="icon">🧮</span>
+                <div>
+                    <h3>Executive Ledger</h3>
+                    <p>Compensation outlay for named executive officers</p>
+                </div>
+            </header>
+            <ul class="stat-list">
+                <li><span>Executive Payroll</span><strong>${{ "{:,.0f}".format(company_summary.exec_total) }}</strong></li>
+                <li><span>Average Exec Compensation</span><strong>${{ "{:,.0f}".format(company_summary.exec_avg_comp) }}</strong></li>
+                <li><span>Average Exec Experience</span><strong>
+                    {% if company_summary.exec_avg_experience %}
+                        {{ "{:.1f}".format(company_summary.exec_avg_experience) }} yrs
+                    {% else %}
+                        —
+                    {% endif %}
+                </strong></li>
+                <li><span>Exec Count</span><strong>{{ company_summary.exec_count }}</strong></li>
+            </ul>
+        </div>
+
+        <div class="team-card">
+            <header class="team-card-header">
+                <span class="icon">🏛️</span>
+                <div>
+                    <h3>Board Stipend</h3>
+                    <p>Non-employee director compensation</p>
+                </div>
+            </header>
+            {% if director_comp_summary %}
+            <ul class="stat-list">
+                <li><span>Covered Directors</span><strong>{{ director_comp_summary.members }}</strong></li>
+                <li><span>Avg Cash Retainer</span><strong>${{ "{:,.0f}".format(director_comp_summary.avg_cash) }}</strong></li>
+                <li><span>Avg Stock Award</span><strong>${{ "{:,.0f}".format(director_comp_summary.avg_stock) }}</strong></li>
+                <li><span>Avg Total Comp</span><strong>${{ "{:,.0f}".format(director_comp_summary.avg_total) }}</strong></li>
+            </ul>
+            {% else %}
+            <p style="color:#94a3b8;">Director compensation data not available for this season.</p>
+            {% endif %}
+        </div>
+
+        <div class="team-card">
+            <header class="team-card-header">
+                <span class="icon">🧬</span>
+                <div>
+                    <h3>Ownership Stack</h3>
+                    <p>Beneficial holdings disclosed in the proxy</p>
+                </div>
+            </header>
+            <ul class="stat-list">
+                <li><span>Director Shares</span><strong>{{ "{:,.0f}".format(ownership_summary.director_shares) }}</strong></li>
+                <li><span>Executive Shares</span><strong>{{ "{:,.0f}".format(ownership_summary.exec_shares) }}</strong></li>
+                <li><span>Combined Control</span><strong>{{ "{:,.0f}".format(ownership_summary.total_shares) }}</strong></li>
+                <li><span>Record Date</span><strong>{{ ownership_summary.as_of }}</strong></li>
+            </ul>
+        </div>
+
+        <div class="team-card">
+            <header class="team-card-header">
+                <span class="icon">📊</span>
+                <div>
+                    <h3>Market Signals</h3>
+                    <p>Financial context & cap pressure</p>
+                </div>
+            </header>
+            <ul class="stat-list">
+                <li><span>Market Cap</span>
+                    <strong>
                         {% if company.market_cap %}
-                            ${{ "{:.1f}".format(company.market_cap / 1000000000) }}B
+                            ${{ "{:,.1f}".format(company.market_cap / 1_000_000_000) }}B
                         {% else %}
                             —
                         {% endif %}
-                    </div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Annual Revenue</div>
-                    <div class="stat-value">
+                    </strong>
+                </li>
+                <li><span>Revenue</span>
+                    <strong>
                         {% if company.revenue %}
-                            ${{ "{:.1f}".format(company.revenue / 1000000000) }}B
+                            ${{ "{:,.1f}".format(company.revenue / 1_000_000_000) }}B
                         {% else %}
                             —
                         {% endif %}
-                    </div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Exec % of Revenue</div>
-                    <div class="stat-value">
+                    </strong>
+                </li>
+                <li><span>Exec % of Revenue</span>
+                    <strong>
                         {% if cap_info.exec_percent_revenue %}
                             {{ "{:.2f}".format(cap_info.exec_percent_revenue) }}%
                         {% else %}
                             —
                         {% endif %}
-                    </div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Founded</div>
-                    <div class="stat-value">{{ company.founded }}</div>
-                </div>
-            </div>
+                    </strong>
+                </li>
+                <li><span>Cap Budget</span><strong>${{ "{:,.0f}".format(cap_info.budget) }}</strong></li>
+            </ul>
         </div>
-    </div>
+    </section>
 
-    <!-- Compensation Chart -->
-    <div class="chart-container">
-        <h3 style="margin-top: 0;">Executive Compensation Breakdown</h3>
-        <canvas id="compensationChart"></canvas>
-    </div>
+    <section class="team-card full chart-card">
+        <header class="team-card-header">
+            <span class="icon">📈</span>
+            <div>
+                <h3>Executive Compensation Breakdown</h3>
+                <p>Total compensation by named executive officer</p>
+            </div>
+        </header>
+        <div class="chart-shell">
+            <canvas id="compensationChart"></canvas>
+        </div>
+    </section>
 
     <!-- C-Suite Roster -->
     {% if c_suite %}
@@ -212,7 +270,7 @@
     {% endif %}
 
     {% if director_comp_summary %}
-    <div class="cap-card" style="margin-top: 2rem;">
+    <div class="team-card" style="margin-top: 2rem;">
         <h3 style="color: #f59e0b; margin-top: 0;">🏛️ Board Compensation Snapshot</h3>
         <div class="cap-stats">
             <div class="stat-item">
@@ -236,7 +294,7 @@
     {% endif %}
 
     {% if director_policies %}
-    <div class="cap-card" style="margin-top: 2rem;">
+    <div class="team-card" style="margin-top: 2rem;">
         <h3 style="color: #38bdf8; margin-top: 0;">📝 Director Compensation Policy</h3>
         <ul style="margin: 0; padding-left: 1.2rem; color: #cbd5f5;">
             {% for policy in director_policies %}
@@ -262,12 +320,12 @@
             data: {
                 labels: {{ chart_labels|safe }},
                 datasets: [{
-                    label: 'Total Compensation',
+                    label: 'Total Compensation (USD)',
                     data: {{ chart_data|safe }},
-                    backgroundColor: 'rgba(16, 185, 129, 0.8)',
-                    borderColor: 'rgba(16, 185, 129, 1)',
-                    borderWidth: 2,
-                    borderRadius: 4,
+                    backgroundColor: 'rgba(244, 63, 94, 0.78)',
+                    borderColor: 'rgba(244, 63, 94, 1)',
+                    borderWidth: 1.5,
+                    borderRadius: 5,
                     borderSkipped: false
                 }]
             },
