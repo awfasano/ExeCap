@@ -201,95 +201,101 @@ def index():
         year = available_years[0]
     year_date = parse_year_to_date(year)
 
-    top_records = league_manager.get_top_earners_league_wide(limit=5, fiscal_year=year_date)
-    top_earners = []
-    for record, company, person in top_records:
-        top_earners.append({
-            'person_id': person.person_id,
-            'person_name': person.full_name,
-            'company_name': company.company_name,
-            'company_ticker': company.ticker,
-            'title': person.current_title,
-            'total_compensation': record.total_comp_usd,
-            'experience': person.years_experience or 0,
-            'year': record.fiscal_year_end.year
-        })
+    company_rows = []
+    total_exec_spend = 0.0
+    total_director_spend = 0.0
+    total_director_shares = 0
+    total_exec_shares = 0
 
-    league_standings = []
     for company in league_manager.get_league_standings():
-        cap_info = league_manager.get_company_cap_snapshot(company.company_id, year_date)
-        executives = league_manager.get_company_compensation(company.company_id, year_date)
-        league_standings.append({
-            'company': company_to_template_dict(company),
-            'company_id': company.company_id,
-            'cap_info': cap_info,
-            'executive_count': len(executives)
-        })
+        company_dict = company_to_template_dict(company)
+        exec_records = league_manager.get_company_compensation(company.company_id, year_date)
+        director_records = [
+            record for record in league_manager.director_comp
+            if record.company_id == company.company_id and (not year_date or record.fiscal_year_end == year_date)
+        ]
+        ownership_records = [
+            record for record in league_manager.beneficial_ownership
+            if record.company_id == company.company_id and (not year_date or record.as_of_date.year == year_date.year)
+        ]
 
-    total_budget = sum(item['cap_info'].get('budget') or 0 for item in league_standings)
-    total_spent = sum(item['cap_info'].get('total_spent') or 0 for item in league_standings)
-    league_summary = {
-        'teams': len(league_standings),
-        'total_budget': total_budget,
-        'total_spent': total_spent,
-        'avg_utilization': (total_spent / total_budget * 100) if total_budget else 0,
-        'over_budget_count': len([team for team in league_standings if team['cap_info'].get('remaining', 0) < 0])
-    }
-
-    cap_space_leaders = sorted(
-        league_standings,
-        key=lambda team: team['cap_info'].get('remaining', 0),
-        reverse=True
-    )[:5]
-
-    over_budget_teams = sorted(
-        [team for team in league_standings if team['cap_info'].get('remaining', 0) < 0],
-        key=lambda team: team['cap_info'].get('utilization_pct', 0),
-        reverse=True
-    )[:5]
-
-    position_leaders = []
-    for rule in ROLE_CATEGORY_RULES:
-        label = rule['label']
-        keywords = rule['keywords']
-
-        matching_records = []
-        for record in league_manager.executive_comp:
-            if year and str(record.fiscal_year_end.year) != year:
-                continue
-
-            person = league_manager.get_person(record.person_id)
-            company = league_manager.get_company(record.company_id)
-            if not person or not company:
-                continue
-
-            title_lower = (person.current_title or '').lower()
-            if any(keyword in title_lower for keyword in keywords):
-                matching_records.append((record, person, company))
-
-        if not matching_records:
+        if year and not exec_records and not director_records:
             continue
 
-        top_record, top_person, top_company = max(matching_records, key=lambda item: item[0].total_comp_usd)
-        position_leaders.append({
-            'label': label,
-            'person_id': top_person.person_id,
-            'person_name': top_person.full_name,
-            'company_name': top_company.company_name,
-            'company_id': top_company.company_id,
-            'company_ticker': top_company.ticker,
-            'title': top_person.current_title,
-            'total_compensation': top_record.total_comp_usd,
+        exec_total = sum(record.total_comp_usd for record in exec_records)
+        director_total = sum(record.total_usd for record in director_records)
+
+        experiences = []
+        exec_person_ids = set()
+        for record in exec_records:
+            person = league_manager.get_person(record.person_id)
+            if person:
+                exec_person_ids.add(person.person_id)
+                if person.years_experience is not None:
+                    experiences.append(person.years_experience)
+
+        avg_experience = (sum(experiences) / len(experiences)) if experiences else None
+        director_count = len({record.person_id for record in director_records})
+
+        ownership_director_shares = 0
+        ownership_exec_shares = 0
+        for record in ownership_records:
+            person = league_manager.get_person(record.person_id)
+            if not person:
+                continue
+            if person.is_director:
+                ownership_director_shares += record.total_shares
+            if person.is_executive or record.person_id in exec_person_ids:
+                ownership_exec_shares += record.total_shares
+
+        total_exec_spend += exec_total
+        total_director_spend += director_total
+        total_director_shares += ownership_director_shares
+        total_exec_shares += ownership_exec_shares
+
+        company_rows.append({
+            'company': company_dict,
+            'executive_total': exec_total,
+            'director_total': director_total,
+            'avg_experience': avg_experience,
+            'executive_count': len(exec_records),
+            'director_count': director_count,
+            'ownership_director_shares': ownership_director_shares,
+            'ownership_exec_shares': ownership_exec_shares,
         })
+
+    company_rows.sort(key=lambda row: row['executive_total'], reverse=True)
+    for idx, row in enumerate(company_rows, start=1):
+        row['rank'] = idx
+
+    exec_chart_labels = [row['company']['ticker'] or row['company']['name'] for row in company_rows[:6]]
+    exec_chart_values = [round(row['executive_total'], 2) for row in company_rows[:6]]
+
+    spend_breakdown = {
+        'labels': ['Executive Compensation', 'Director Compensation'],
+        'values': [round(total_exec_spend, 2), round(total_director_spend, 2)]
+    }
+
+    ownership_breakdown = {
+        'labels': ['Director Shares', 'Executive Shares'],
+        'values': [total_director_shares, total_exec_shares]
+    }
+
+    summary_metrics = {
+        'companies': len(company_rows),
+        'total_exec_spend': total_exec_spend,
+        'total_director_spend': total_director_spend,
+        'avg_exec_spend': (total_exec_spend / len(company_rows)) if company_rows else 0,
+    }
 
     return render_template(
         'index.html',
-        top_earners=top_earners,
-        league_standings=league_standings,
-        league_summary=league_summary,
-        cap_space_leaders=cap_space_leaders,
-        over_budget_teams=over_budget_teams,
-        position_leaders=position_leaders,
+        company_rows=company_rows,
+        summary_metrics=summary_metrics,
+        exec_chart_labels=exec_chart_labels,
+        exec_chart_values=exec_chart_values,
+        spend_breakdown=spend_breakdown,
+        ownership_breakdown=ownership_breakdown,
         selected_year=year,
         available_years=available_years,
     )

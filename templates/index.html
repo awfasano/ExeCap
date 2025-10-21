@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}League Overview | ExecuCap{% endblock %}
+{% block title %}League Dashboard | ExecuCap{% endblock %}
 
 {% block content %}
     <section class="hero-card">
         <div class="hero-headline">
             <div>
                 <p class="hero-eyebrow">Executive Salary Cap League</p>
-                <h1>Track the Corporate Front Office Offseason</h1>
+                <h1>Front Office Finance Dashboard</h1>
                 <p class="hero-subcopy">
-                    Dive into cap space, blockbuster compensation packages, and front office moves just like an NFL salary cap hub.
+                    Benchmark executive payrolls, boardroom spend, and insider ownership across the league.
                 </p>
             </div>
             <form class="season-switcher" method="get">
@@ -26,139 +26,82 @@
         <div class="hero-stats">
             <div class="hero-stat">
                 <span class="stat-label">Teams Tracked</span>
-                <span class="stat-value">{{ league_summary.teams }}</span>
+                <span class="stat-value">{{ summary_metrics.companies }}</span>
             </div>
             <div class="hero-stat">
-                <span class="stat-label">League Cap Budget</span>
-                <span class="stat-value">${{ "{:,.0f}".format(league_summary.total_budget) }}</span>
+                <span class="stat-label">Total Executive Spend</span>
+                <span class="stat-value">${{ "{:,.0f}".format(summary_metrics.total_exec_spend) }}</span>
             </div>
             <div class="hero-stat">
-                <span class="stat-label">Spent To-Date</span>
-                <span class="stat-value">${{ "{:,.0f}".format(league_summary.total_spent) }}</span>
+                <span class="stat-label">Total Director Spend</span>
+                <span class="stat-value">${{ "{:,.0f}".format(summary_metrics.total_director_spend) }}</span>
             </div>
             <div class="hero-stat">
-                <span class="stat-label">Avg Utilization</span>
-                <span class="stat-value">{{ "{:.1f}".format(league_summary.avg_utilization) }}%</span>
+                <span class="stat-label">Avg Exec Spend / Team</span>
+                <span class="stat-value">${{ "{:,.0f}".format(summary_metrics.avg_exec_spend) }}</span>
             </div>
         </div>
     </section>
 
     <div class="home-grid">
-        <section class="cap-leaderboard">
-            <h2>Cap Space Leaderboard</h2>
-            <p>Who's primed to make the next headline hire?</p>
-            <ul>
-                {% for team in cap_space_leaders %}
-                <li>
-                    <div class="team-meta">
-                        <span class="team-rank">{{ loop.index }}</span>
-                        <div>
-                            <a href="{{ url_for('company_detail', company_id=team.company_id) }}" class="team-name">
-                                {{ team.company.name }}
-                            </a>
-                            <span class="team-ticker">{{ team.company.ticker }}</span>
-                        </div>
-                    </div>
-                    <div class="team-cap-bar">
-                        <div class="cap-bar">
-                            <div class="cap-fill {% if team.cap_info.utilization_pct > 100 %}over-budget{% endif %}"
-                                 style="width: {{ [team.cap_info.utilization_pct, 100]|min }}%">
-                            </div>
-                        </div>
-                        <div class="team-cap-numbers">
-                            <span class="num-positive">Cap Space: ${{ "{:,.0f}".format(team.cap_info.remaining) }}</span>
-                            <span class="num-muted">Utilization: {{ "{:.1f}".format(team.cap_info.utilization_pct) }}%</span>
-                        </div>
-                    </div>
-                </li>
-                {% endfor %}
-            </ul>
-        </section>
-
-        <section class="top-contracts">
-            <h2>Marquee Contracts</h2>
-            <p>The biggest deals of the {{ selected_year }} season.</p>
-            <div class="top-contracts-list">
-                {% for earner in top_earners %}
-                <article class="contract-card">
-                    <header>
-                        <a href="{{ url_for('person_detail', person_id=earner.person_id) }}" class="contract-name">
-                            {{ earner.person_name }}
-                        </a>
-                        <span class="contract-value">${{ "{:,.0f}".format(earner.total_compensation) }}</span>
-                    </header>
-                    <div class="contract-meta">
-                        <span class="meta-role">{{ earner.title }}</span>
-                        <span class="meta-team">{{ earner.company_name }}</span>
-                    </div>
-                    <footer>
-                        <span class="meta-experience">{{ earner.experience }} yrs experience</span>
-                        <span class="meta-season">{{ earner.year }} Season</span>
-                    </footer>
-                </article>
-                {% endfor %}
+        <section class="dashboard-card" style="grid-column: span 2;">
+            <h2>Compensation Pulse</h2>
+            <p style="color: #94a3b8;">Compare executive and board spending across the league</p>
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; min-height: 320px;">
+                <canvas id="execSpendChart"></canvas>
+                <div style="display: grid; gap: 2rem;">
+                    <canvas id="spendBreakdownChart"></canvas>
+                    <canvas id="ownershipChart"></canvas>
+                </div>
             </div>
         </section>
 
-        <section class="position-leaders">
-            <h2>Position Salary Leaders</h2>
-            <p>Highest total compensation by key front office roles.</p>
-            {% if position_leaders %}
-            <div class="position-leader-grid">
-                {% for leader in position_leaders %}
-                <article class="position-leader-card">
-                    <header>
-                        <span class="position-tag">{{ leader.label }}</span>
-                        <span class="position-value">${{ "{:,.0f}".format(leader.total_compensation) }}</span>
-                    </header>
-                    <div class="position-body">
-                        <a href="{{ url_for('person_detail', person_id=leader.person_id) }}" class="position-name">
-                            {{ leader.person_name }}
-                        </a>
-                        <span class="position-title">{{ leader.title }}</span>
-                    </div>
-                    <footer>
-                        <a href="{{ url_for('company_detail', company_id=leader.company_id) }}" class="position-team">
-                            {{ leader.company_name }} ({{ leader.company_ticker }})
-                        </a>
-                    </footer>
-                </article>
-                {% endfor %}
+        <section class="dashboard-card" style="grid-column: span 2;">
+            <h2>Company Salary Cap Table</h2>
+            <p style="color: #94a3b8;">Sorted by executive compensation for {{ selected_year }}</p>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Company</th>
+                            <th>Exec Spend</th>
+                            <th>Director Spend</th>
+                            <th>Avg Exec Exp.</th>
+                            <th>Execs</th>
+                            <th>Directors</th>
+                            <th>Director Shares</th>
+                            <th>Executive Shares</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in company_rows %}
+                        <tr>
+                            <td>{{ row.rank }}</td>
+                            <td>
+                                <a href="{{ url_for('company_detail', company_id=row.company.company_id) }}">
+                                    <strong>{{ row.company.name }}</strong><br>
+                                    <small style="color: #94a3b8;">{{ row.company.ticker }}</small>
+                                </a>
+                            </td>
+                            <td class="salary-amount">${{ "{:,.0f}".format(row.executive_total) }}</td>
+                            <td class="salary-amount">${{ "{:,.0f}".format(row.director_total) }}</td>
+                            <td>
+                                {% if row.avg_experience %}
+                                    {{ "{:.1f}".format(row.avg_experience) }} yrs
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td>{{ row.executive_count }}</td>
+                            <td>{{ row.director_count }}</td>
+                            <td>{{ "{:,.0f}".format(row.ownership_director_shares) }}</td>
+                            <td>{{ "{:,.0f}".format(row.ownership_exec_shares) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
-            {% else %}
-            <div class="empty-state">
-                <h3>No role leaders yet</h3>
-                <p>Load executive data to surface the top earners by position.</p>
-            </div>
-            {% endif %}
-        </section>
-
-        <section class="over-budget-watch">
-            <h2>Over Budget Watchlist</h2>
-            <p>Teams navigating luxury tax territory.</p>
-            {% if over_budget_teams %}
-            <ul>
-                {% for team in over_budget_teams %}
-                <li>
-                    <div>
-                        <a href="{{ url_for('company_detail', company_id=team.company_id) }}" class="team-name">
-                            {{ team.company.name }}
-                        </a>
-                        <span class="team-ticker">{{ team.company.ticker }}</span>
-                    </div>
-                    <div class="over-budget-metrics">
-                        <span class="metric-over">Over Cap by ${{ "{:,.0f}".format((-team.cap_info.remaining)) }}</span>
-                        <span class="metric-util">Utilization {{ "{:.1f}".format(team.cap_info.utilization_pct) }}%</span>
-                    </div>
-                </li>
-                {% endfor %}
-            </ul>
-            {% else %}
-            <div class="empty-state">
-                <h3>All clear!</h3>
-                <p>No teams are over their executive cap right now.</p>
-            </div>
-            {% endif %}
         </section>
 
         <section class="quick-links">
@@ -168,17 +111,109 @@
                     <span class="emoji">🏢</span>
                     <div>
                         <h3>Team Cap Tables</h3>
-                        <p>Compare cap usage and roster counts across every company.</p>
+                        <p>Drill into company rosters, contracts, and director policies.</p>
                     </div>
                 </a>
                 <a class="quick-link-card" href="{{ url_for('free_agents') }}">
                     <span class="emoji">🎯</span>
                     <div>
                         <h3>Free Agent Big Board</h3>
-                        <p>Scout executives ready to sign the next blockbuster deal.</p>
+                        <p>Scout executives ready for the next blockbuster hire.</p>
                     </div>
                 </a>
             </div>
         </section>
     </div>
+
+    <script>
+        const execLabels = {{ exec_chart_labels|tojson }};
+        const execValues = {{ exec_chart_values|tojson }};
+        const spendBreakdown = {{ spend_breakdown|tojson }};
+        const ownershipBreakdown = {{ ownership_breakdown|tojson }};
+
+        const execCtx = document.getElementById('execSpendChart');
+        const spendCtx = document.getElementById('spendBreakdownChart');
+        const ownershipCtx = document.getElementById('ownershipChart');
+
+        new Chart(execCtx, {
+            type: 'bar',
+            data: {
+                labels: execLabels,
+                datasets: [{
+                    label: 'Executive Compensation (USD)',
+                    data: execValues,
+                    backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    borderWidth: 2,
+                    borderRadius: 6,
+                    borderSkipped: false
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => '$' + ctx.formattedValue.replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',')
+                        }
+                    }
+                },
+                scales: {
+                    x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148, 163, 184, 0.2)' } },
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: '#94a3b8',
+                            callback: (value) => '$' + new Intl.NumberFormat().format(value)
+                        },
+                        grid: { color: 'rgba(148, 163, 184, 0.15)' }
+                    }
+                }
+            }
+        });
+
+        const doughnutOpts = {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: '#94a3b8' }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => ctx.label + ': ' + new Intl.NumberFormat().format(ctx.parsed)
+                    }
+                }
+            }
+        };
+
+        new Chart(spendCtx, {
+            type: 'doughnut',
+            data: {
+                labels: spendBreakdown.labels,
+                datasets: [{
+                    data: spendBreakdown.values,
+                    backgroundColor: ['rgba(16, 185, 129, 0.8)', 'rgba(59, 130, 246, 0.8)'],
+                    borderColor: ['rgba(16, 185, 129, 1)', 'rgba(59, 130, 246, 1)'],
+                    borderWidth: 1
+                }]
+            },
+            options: doughnutOpts
+        });
+
+        new Chart(ownershipCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ownershipBreakdown.labels,
+                datasets: [{
+                    data: ownershipBreakdown.values,
+                    backgroundColor: ['rgba(245, 158, 11, 0.8)', 'rgba(15, 118, 110, 0.8)'],
+                    borderColor: ['rgba(245, 158, 11, 1)', 'rgba(15, 118, 110, 1)'],
+                    borderWidth: 1
+                }]
+            },
+            options: doughnutOpts
+        });
+    </script>
 {% endblock %}
