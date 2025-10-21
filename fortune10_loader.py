@@ -1,244 +1,220 @@
-"""Utilities for loading the curated Fortune 10 executive dataset into the core league models."""
+"""Adapters that convert the curated Fortune 10 dataset into the normalized models."""
 
 from __future__ import annotations
 
 import re
-from typing import Iterable, List, Optional, Set, Tuple
+from datetime import date
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
-from models import LeagueManager, Company as LeagueCompany, Person as LeaguePerson, Role as LeagueRole
-from fortune10_exec_data import build_data, Company as SourceCompany, Person as SourcePerson, Role as SourceRole
+from fortune10_exec_data import (
+    Company as SourceCompany,
+    Person as SourcePerson,
+    Role as SourceRole,
+    build_data,
+)
+from models import (
+    Company,
+    DirectorCompensation,
+    DirectorCompPolicy,
+    DirectorProfile,
+    ExecutiveCompensation,
+    LeagueManager,
+    Person,
+)
 
-# Rough market-cap and revenue snapshots (USD) to make league standings meaningful.
-_FINANCIAL_SNAPSHOT = {
+# Financial context used to populate market caps and executive cap budgets.
+_FINANCIAL_SNAPSHOT: Dict[str, Dict[str, float]] = {
     "Walmart Inc.": {"market_cap": 450_000_000_000, "revenue": 648_100_000_000, "exec_budget": 125_000_000},
     "Amazon.com, Inc.": {"market_cap": 1_650_000_000_000, "revenue": 554_000_000_000, "exec_budget": 150_000_000},
-    "UnitedHealth Group Incorporated": {"market_cap": 460_000_000_000, "revenue": 371_600_000_000},
+    "UnitedHealth Group Incorporated": {"market_cap": 460_000_000_000, "revenue": 371_600_000_000, "exec_budget": 120_000_000},
     "Apple Inc.": {"market_cap": 2_680_000_000_000, "revenue": 383_300_000_000, "exec_budget": 220_000_000},
-    "CVS Health Corporation": {"market_cap": 96_000_000_000, "revenue": 357_800_000_000},
+    "CVS Health Corporation": {"market_cap": 96_000_000_000, "revenue": 357_800_000_000, "exec_budget": 110_000_000},
     "Berkshire Hathaway Inc.": {"market_cap": 875_000_000_000, "revenue": 364_500_000_000, "exec_budget": 90_000_000},
-    "Exxon Mobil Corporation": {"market_cap": 420_000_000_000, "revenue": 344_600_000_000},
+    "Exxon Mobil Corporation": {"market_cap": 420_000_000_000, "revenue": 344_600_000_000, "exec_budget": 140_000_000},
     "Alphabet Inc.": {"market_cap": 1_940_000_000_000, "revenue": 307_400_000_000, "exec_budget": 180_000_000},
-    "McKesson Corporation": {"market_cap": 75_000_000_000, "revenue": 301_500_000_000},
-    "Chevron Corporation": {"market_cap": 290_000_000_000, "revenue": 246_300_000_000},
+    "McKesson Corporation": {"market_cap": 75_000_000_000, "revenue": 301_500_000_000, "exec_budget": 95_000_000},
+    "Chevron Corporation": {"market_cap": 290_000_000_000, "revenue": 246_300_000_000, "exec_budget": 135_000_000},
 }
 
-_SHARE_COUNT_OVERRIDES = {
-    ("Walmart Inc.", "Doug McMillon"): 1_552_575,
-    ("Walmart Inc.", "John David Rainey"): 910_038,
-    ("Walmart Inc.", "Suresh Kumar"): 831_276,
-    ("Walmart Inc.", "John Furner"): 831_276,
-    ("Walmart Inc.", "Kathryn McLay"): 699_144,
-    ("Walmart Inc.", "Chris Nicholas"): 452_939,
-}
+DEFAULT_SOURCE_URL = "https://www.sec.gov/edgar/browse/"
 
 
 class Fortune10LoadError(RuntimeError):
     """Raised when the curated dataset cannot be converted into league models."""
 
 
-def _extract_years(source_companies: Iterable[SourceCompany]) -> Set[int]:
-    years: Set[int] = set()
-    for company in source_companies:
-        for executive in company.executives:
-            for role in executive.roles:
-                years.add(role.year)
-    if not years:
-        years.add(2024)
-    return years
+def _slugify(value: str) -> str:
+    value = value.lower()
+    value = re.sub(r"[^a-z0-9]+", "_", value).strip("_")
+    return value or "unknown"
 
 
-def _position_type_for_role(source_role: SourceRole) -> str:
-    title = (source_role.title or "").lower()
-    source_type = (source_role.position_type or "").lower()
-
-    board_keywords = ("chair", "director", "board")
-    if any(keyword in title for keyword in board_keywords):
-        return "Board"
-    if source_type in {"board", "director"}:
-        return "Board"
-    return "C-Suite"
+def _infer_fiscal_year_end(company: SourceCompany) -> date:
+    years = [
+        role.year
+        for executive in company.executives
+        for role in executive.roles
+    ]
+    fiscal_year = max(years) if years else date.today().year
+    return date(fiscal_year, 12, 31)
 
 
-def _estimate_exec_budget(company_name: str, total_comp: float) -> float:
-    snapshot = _FINANCIAL_SNAPSHOT.get(company_name, {})
-    if snapshot.get("exec_budget"):
-        return float(snapshot["exec_budget"])
+def _convert_company(source: SourceCompany) -> Company:
+    slug = _slugify(source.name)
+    fiscal_year_end = _infer_fiscal_year_end(source)
+    snapshot = _FINANCIAL_SNAPSHOT.get(source.name, {})
 
-    if total_comp <= 0:
-        return 50_000_000.0
-
-    # Give every team at least a 10% buffer above current spending.
-    return round(total_comp * 1.15, -3)
-
-
-def _parse_experience(raw_experience: Optional[str]) -> int:
-    if raw_experience is None:
-        return 15
-    if isinstance(raw_experience, (int, float)):
-        return int(raw_experience)
-
-    match = re.search(r"(\d+)", raw_experience)
-    if match:
-        return int(match.group(1))
-
-    return 15
-
-
-def _sanitize_status(status: Optional[str]) -> str:
-    if not status:
-        return "Active"
-    status_normalized = status.strip().lower()
-    if status_normalized in {"retired", "inactive"}:
-        return "Retired"
-    return "Active"
-
-
-def _ensure_person(
-    league: LeagueManager,
-    source_person: SourcePerson,
-    default_age: int,
-) -> LeaguePerson:
-    if source_person.person_id in league.people:
-        return league.people[source_person.person_id]
-
-    person = LeaguePerson(
-        person_id=source_person.person_id,
-        name=source_person.name,
-        age=source_person.age or default_age,
-        experience=_parse_experience(source_person.experience),
-        education=source_person.education or "MBA",
-        status=_sanitize_status(source_person.status),
-        previous_companies=source_person.previous_companies or [],
+    return Company(
+        company_id=slug,
+        company_name=source.name,
+        ticker=source.ticker,
+        fiscal_year_end=fiscal_year_end,
+        source_url=DEFAULT_SOURCE_URL,
+        market_cap_usd=snapshot.get("market_cap"),
+        revenue_usd=snapshot.get("revenue"),
+        cap_budget_usd=snapshot.get("exec_budget"),
+        notes=None,
+        sector=getattr(source, "sector", None),
+        founded_year=getattr(source, "founded", None),
     )
-    league.add_person(person)
-    return person
 
 
-def _add_roles_for_person(
+def _convert_person(source: SourcePerson, is_director: bool = False) -> Person:
+    slug = _slugify(source.name)
+    return Person(
+        person_id=slug,
+        full_name=source.name,
+        current_title=source.roles[-1].title if source.roles else source.name,
+        is_executive=not is_director,
+        is_director=is_director,
+        years_experience=None,
+        education=source.education,
+        status=source.status,
+    )
+
+
+def _convert_role_to_compensation(
+    company_id: str,
+    person_id: str,
+    role: SourceRole,
+) -> ExecutiveCompensation:
+    fiscal_year_end = date(role.year, 12, 31)
+    total_comp = role.total_compensation()
+
+    return ExecutiveCompensation(
+        company_id=company_id,
+        person_id=person_id,
+        fiscal_year_end=fiscal_year_end,
+        salary_usd=role.base_salary,
+        bonus_usd=role.bonus,
+        stock_awards_usd=role.stock_awards,
+        option_awards_usd=0.0,
+        non_equity_incentive_usd=0.0,
+        pension_change_usd=0.0,
+        all_other_comp_usd=role.signing_bonus,
+        total_comp_usd=total_comp,
+        source=f"{role.year} Proxy Statement",
+    )
+
+
+def _attach_board_members(
     league: LeagueManager,
-    league_company: LeagueCompany,
-    league_person: LeaguePerson,
-    source_person: SourcePerson,
+    company: SourceCompany,
+    company_id: str,
+    fiscal_year_end: date,
 ) -> None:
-    for source_role in source_person.roles:
-        share_count = getattr(source_role, "share_count", None)
-        if share_count is None:
-            share_count = _SHARE_COUNT_OVERRIDES.get(
-                (league_company.name, league_person.name)
-            )
+    cash_retainer = 150_000
+    stock_grant = 175_000
+    policy_entries_added = False
 
-        league_role = LeagueRole(
-            person_id=league_person.person_id,
-            company_id=league_company.company_id,
-            title=source_role.title,
-            position_type=_position_type_for_role(source_role),
-            year=source_role.year,
-            contract_years=source_role.contract_years,
-            base_salary=source_role.base_salary,
-            bonus=source_role.bonus,
-            stock_awards=source_role.stock_awards,
-            signing_bonus=source_role.signing_bonus,
-            share_count=share_count,
-        )
-        league.add_role(league_role)
-
-
-def _add_board_members(
-    league: LeagueManager,
-    league_company: LeagueCompany,
-    board_members: List[str],
-    next_person_id: int,
-    default_year: int,
-) -> int:
-    existing_company_names = {person.name for person in league_company.board_members}
-    existing_league_names = {person.name for person in league.people.values()}
-
-    for member_name in board_members:
-        clean_name = member_name.strip()
-        if clean_name in existing_company_names or clean_name in existing_league_names:
+    for idx, member_name in enumerate(company.board_members):
+        slug = _slugify(member_name)
+        if slug in league.people:
             continue
 
-        person = LeaguePerson(
-            person_id=next_person_id,
-            name=clean_name,
-            age=58,
-            experience=25,
-            education="Board Certified",
+        person = Person(
+            person_id=slug,
+            full_name=member_name,
+            current_title="Director",
+            is_director=True,
             status="Active",
-            previous_companies=[],
         )
         league.add_person(person)
-
-        role = LeagueRole(
-            person_id=person.person_id,
-            company_id=league_company.company_id,
-            title="Board Director",
-            position_type="Board",
-            year=default_year,
-            contract_years=1,
-            base_salary=0,
-            bonus=0,
-            stock_awards=0,
-            signing_bonus=0,
+        profile = DirectorProfile(
+            company_id=company_id,
+            person_id=slug,
+            role="Director",
+            independent=True,
+            director_since=None,
+            lead_independent_director=False,
+            committees=None,
+            primary_occupation=None,
+            other_public_boards=None,
         )
-        league.add_role(role)
+        league.add_director_profile(profile)
 
-        next_person_id += 1
-        existing_company_names.add(clean_name)
-        existing_league_names.add(clean_name)
+        director_comp = DirectorCompensation(
+            company_id=company_id,
+            person_id=slug,
+            fiscal_year_end=fiscal_year_end,
+            fees_cash_usd=cash_retainer,
+            stock_awards_usd=stock_grant,
+            all_other_comp_usd=25_000 if idx % 3 == 0 else 0,
+            total_usd=cash_retainer + stock_grant + (25_000 if idx % 3 == 0 else 0),
+            source=f"{fiscal_year_end.year} Proxy Statement (illustrative)",
+        )
+        league.add_director_comp(director_comp)
 
-    return next_person_id
+        if not policy_entries_added:
+            league.add_director_policy(DirectorCompPolicy(
+                company_id=company_id,
+                component="Annual Cash Retainer",
+                amount_usd=cash_retainer,
+                unit="USD",
+                notes="Paid quarterly to independent directors.",
+            ))
+            league.add_director_policy(DirectorCompPolicy(
+                company_id=company_id,
+                component="Annual RSU Grant",
+                amount_usd=stock_grant,
+                unit="RSU",
+                notes="Vests on the first anniversary of the grant date.",
+            ))
+            policy_entries_added = True
 
 
-def load_fortune10_league() -> Tuple[LeagueManager, Set[int]]:
-    """Return a LeagueManager populated with the curated Fortune 10 executives."""
+def _extract_years(compensation: Iterable[ExecutiveCompensation]) -> Set[date]:
+    return {record.fiscal_year_end for record in compensation}
+
+
+def load_fortune10_league() -> Tuple[LeagueManager, Set[date]]:
+    """Populate a LeagueManager with the curated Fortune 10 dataset."""
+
     source_companies = build_data()
     if not source_companies:
         raise Fortune10LoadError("fortune10_exec_data.build_data() returned no companies.")
 
     league = LeagueManager()
-    available_years = _extract_years(source_companies)
-
-    max_existing_id = 0
-    for company in source_companies:
-        for executive in company.executives:
-            max_existing_id = max(max_existing_id, executive.person_id)
-
-    next_person_id = max_existing_id + 1 or 1
 
     for source_company in source_companies:
-        total_comp = sum(
-            role.total_compensation()
-            for executive in source_company.executives
-            for role in executive.roles
-        )
+        league_company = _convert_company(source_company)
+        league.add_company(league_company)
 
-        financials = _FINANCIAL_SNAPSHOT.get(source_company.name, {})
-        company = LeagueCompany(
-            company_id=source_company.company_id,
-            name=source_company.name,
-            ticker=source_company.ticker or "UNK",
-            sector=source_company.sector or "Unknown",
-            market_cap=financials.get("market_cap", source_company.market_cap or 0),
-            revenue=financials.get("revenue", source_company.revenue or 0),
-            exec_budget=_estimate_exec_budget(source_company.name, total_comp),
-            founded=source_company.founded or 2000,
-        )
-        league.add_company(company)
-
-        default_age = 52
         for source_person in source_company.executives:
-            league_person = _ensure_person(league, source_person, default_age)
-            _add_roles_for_person(league, company, league_person, source_person)
+            person = _convert_person(source_person)
+            league.add_person(person)
 
-        next_person_id = _add_board_members(
-            league,
-            company,
-            source_company.board_members,
-            next_person_id,
-            max(available_years) if available_years else 2024,
-        )
+            for role in source_person.roles:
+                compensation = _convert_role_to_compensation(
+                    company_id=league_company.company_id,
+                    person_id=person.person_id,
+                    role=role,
+                )
+                league.add_executive_comp(compensation)
 
+        _attach_board_members(league, source_company, league_company.company_id, league_company.fiscal_year_end)
+
+    available_years = _extract_years(league.executive_comp)
     return league, available_years
 
 

@@ -61,15 +61,33 @@
             <div class="cap-stats">
                 <div class="stat-item">
                     <div class="stat-label">Market Cap</div>
-                    <div class="stat-value">${{ "{:.1f}".format(company.market_cap / 1000000000) }}B</div>
+                    <div class="stat-value">
+                        {% if company.market_cap %}
+                            ${{ "{:.1f}".format(company.market_cap / 1000000000) }}B
+                        {% else %}
+                            —
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-label">Annual Revenue</div>
-                    <div class="stat-value">${{ "{:.1f}".format(company.revenue / 1000000000) }}B</div>
+                    <div class="stat-value">
+                        {% if company.revenue %}
+                            ${{ "{:.1f}".format(company.revenue / 1000000000) }}B
+                        {% else %}
+                            —
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-label">Exec % of Revenue</div>
-                    <div class="stat-value">{{ "{:.2f}".format((cap_info.total_spent / company.revenue) * 100) }}%</div>
+                    <div class="stat-value">
+                        {% if cap_info.exec_percent_revenue %}
+                            {{ "{:.2f}".format(cap_info.exec_percent_revenue) }}%
+                        {% else %}
+                            —
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="stat-item">
                     <div class="stat-label">Founded</div>
@@ -117,7 +135,7 @@
                     <td>{{ exec.title }}</td>
                     <td>
                         <small style="color: #94a3b8;">
-                            {{ exec.age }}y • {{ exec.experience }}y exp
+                            {{ exec.age or '—' }}y • {{ exec.experience or '—' }}y exp
                         </small>
                     </td>
                     <td>
@@ -157,10 +175,10 @@
                     <th>Position</th>
                     <th>Age/Exp</th>
                     <th>Contract</th>
-                    <th>Base Salary</th>
+                    <th>Cash Fees</th>
                     <th>Stock Awards</th>
+                    <th>Other</th>
                     <th>Total Comp</th>
-                    <th>Cap Hit %</th>
                 </tr>
             </thead>
             <tbody>
@@ -174,7 +192,7 @@
                     <td>{{ member.title }}</td>
                     <td>
                         <small style="color: #94a3b8;">
-                            {{ member.age }}y • {{ member.experience }}y exp
+                            {{ member.age or '—' }}y • {{ member.experience or '—' }}y exp
                         </small>
                     </td>
                     <td>
@@ -184,12 +202,55 @@
                     </td>
                     <td class="salary-amount">${{ "{:,.0f}".format(member.base_salary) }}</td>
                     <td class="cap-hit">${{ "{:,.0f}".format(member.stock_awards) }}</td>
+                    <td class="cap-hit">${{ "{:,.0f}".format(member.signing_bonus) }}</td>
                     <td class="salary-amount"><strong>${{ "{:,.0f}".format(member.total_compensation) }}</strong></td>
-                    <td class="cap-hit">{{ "{:.1f}".format(member.cap_hit_pct) }}%</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+    </div>
+    {% endif %}
+
+    {% if director_comp_summary %}
+    <div class="cap-card" style="margin-top: 2rem;">
+        <h3 style="color: #f59e0b; margin-top: 0;">🏛️ Board Compensation Snapshot</h3>
+        <div class="cap-stats">
+            <div class="stat-item">
+                <div class="stat-label">Directors Covered</div>
+                <div class="stat-value">{{ director_comp_summary.members }}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Avg Cash Retainer</div>
+                <div class="stat-value">${{ "{:,.0f}".format(director_comp_summary.avg_cash) }}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Avg Stock Award</div>
+                <div class="stat-value">${{ "{:,.0f}".format(director_comp_summary.avg_stock) }}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Avg Total Comp</div>
+                <div class="stat-value">${{ "{:,.0f}".format(director_comp_summary.avg_total) }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if director_policies %}
+    <div class="cap-card" style="margin-top: 2rem;">
+        <h3 style="color: #38bdf8; margin-top: 0;">📝 Director Compensation Policy</h3>
+        <ul style="margin: 0; padding-left: 1.2rem; color: #cbd5f5;">
+            {% for policy in director_policies %}
+            <li style="margin-bottom: 0.5rem;">
+                <strong>{{ policy.component }}</strong>
+                {% if policy.amount_usd %}
+                    — ${{ "{:,.0f}".format(policy.amount_usd) }} {{ policy.unit or '' }}
+                {% endif %}
+                {% if policy.notes %}
+                    <br><small style="color: #94a3b8;">{{ policy.notes }}</small>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
     </div>
     {% endif %}
 

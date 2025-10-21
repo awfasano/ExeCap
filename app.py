@@ -1,7 +1,8 @@
 # app.py - Complete version with year-based data structure support
 import json
 import os
-from typing import List, Optional, Set
+from datetime import date
+from typing import Dict, List, Optional, Set
 
 from flask import Flask, jsonify, render_template, request, url_for
 
@@ -22,48 +23,45 @@ ROLE_CATEGORY_RULES = [
     {
         'label': 'Chairman',
         'keywords': ['chairman', 'chairperson', 'chairwoman'],
-        'position_types': ['Board']
     },
     {
         'label': 'Board Director',
         'keywords': ['director'],
-        'position_types': ['Board']
+    },
+    {
+        'label': 'Executive Chair',
+        'keywords': ['executive chair'],
     },
     {
         'label': 'Chief Executive Officer',
         'keywords': ['chief executive officer', 'ceo'],
-        'position_types': ['C-Suite']
     },
     {
         'label': 'Chief Financial Officer',
         'keywords': ['chief financial officer', 'cfo'],
-        'position_types': ['C-Suite']
     },
     {
         'label': 'Chief Operating Officer',
         'keywords': ['chief operating officer', 'coo'],
-        'position_types': ['C-Suite']
     },
     {
         'label': 'Executive Vice President',
         'keywords': ['executive vice president', 'evp'],
-        'position_types': ['C-Suite']
     },
     {
         'label': 'Vice President',
         'keywords': ['vice president'],
-        'position_types': ['C-Suite']
     },
     {
         'label': 'President',
         'keywords': ['president'],
-        'position_types': ['C-Suite', 'Board']
     }
 ]
 
 # Initialize the Excel loader when using GCS
 folder_loader: Optional[CompanyFolderLoader] = None
-if DATA_SOURCE != 'fortune10':
+if DATA_SOURCE == 'gcs':
+    print("Configured to load company data from GCS bucket")
     folder_loader = CompanyFolderLoader(BUCKET_NAME, CREDENTIALS_PATH)
 
 FALLBACK_AVAILABLE_YEARS: Set[str] = set()
@@ -75,7 +73,7 @@ def load_fortune10_sample_dataset() -> LeagueManager:
     global FALLBACK_AVAILABLE_YEARS, USING_SAMPLE_DATA
     try:
         league, years = load_fortune10_league()
-        FALLBACK_AVAILABLE_YEARS = {str(year) for year in years}
+        FALLBACK_AVAILABLE_YEARS = {str(year.year) for year in years}
         USING_SAMPLE_DATA = True
         print("Loaded Fortune 10 sample dataset for local development.")
         return league
@@ -94,13 +92,11 @@ def get_available_year_options() -> List[str]:
     if FALLBACK_AVAILABLE_YEARS:
         return sorted(FALLBACK_AVAILABLE_YEARS, reverse=True)
 
-    if folder_loader:
-        try:
-            years = folder_loader.get_available_years()
-            if years:
-                return sorted(years, reverse=True)
-        except Exception as error:
-            print(f"Unable to list years from bucket: {error}")
+    manager = globals().get('league_manager')
+    if manager and hasattr(manager, 'get_available_years'):
+        manager_years = getattr(manager, 'get_available_years')()
+        if manager_years:
+            return sorted({str(year.year) for year in manager_years}, reverse=True)
 
     return [DEFAULT_YEAR]
 
@@ -108,6 +104,33 @@ def get_available_year_options() -> List[str]:
 # Get current year from query params or use default
 def get_selected_year():
     return request.args.get('year', DEFAULT_YEAR)
+
+
+def parse_year_to_date(year_str: Optional[str]) -> Optional[date]:
+    if not year_str:
+        return None
+    try:
+        return date(int(year_str), 12, 31)
+    except ValueError:
+        return None
+
+
+def company_to_template_dict(company) -> Dict:
+    return {
+        'company_id': company.company_id,
+        'name': company.company_name,
+        'ticker': company.ticker,
+        'sector': company.sector or 'N/A',
+        'market_cap': company.market_cap_usd or 0,
+        'revenue': company.revenue_usd or 0,
+        'exec_budget': company.cap_budget_usd or 0,
+        'founded': company.founded_year or '—',
+        'fiscal_year_end': company.fiscal_year_end,
+    }
+
+
+def get_board_count(manager: LeagueManager, company_id: str) -> int:
+    return len(manager.get_director_profiles_for_company(company_id))
 
 
 # Load initial data
@@ -124,7 +147,11 @@ else:
         if load_result['status'] == 'success' and load_result.get('companies_count'):
             print(f"Successfully loaded data for companies: {load_result['companies_loaded']}")
             print(
-                f"Total: {load_result['companies_count']} companies, {load_result['people_count']} people, {load_result['roles_count']} roles")
+                f"Total: {load_result['companies_count']} companies, {load_result['people_count']} people, {load_result['executive_comp_count']} compensation rows")
+            if load_result.get('warnings'):
+                print("Warnings during load:")
+                for warning in load_result['warnings']:
+                    print(f" - {warning}")
 
             # Get the league manager directly from the loader
             league_manager = folder_loader.get_league_manager()
@@ -146,159 +173,136 @@ else:
 def index():
     """League Overview with year selection"""
     year = get_selected_year()
-
-    # Get available years for dropdown
     available_years = get_available_year_options()
     if year not in available_years and available_years:
         year = available_years[0]
+    year_date = parse_year_to_date(year)
 
-    # Filter data by year if needed
-    top_earners_data = league_manager.get_top_earners_league_wide(limit=5)
-
-    # Format for template
+    top_records = league_manager.get_top_earners_league_wide(limit=5, fiscal_year=year_date)
     top_earners = []
-    for earner_data in top_earners_data:
-        # Only include if role matches selected year
-        if str(earner_data['role'].year) == year or not year:
-            top_earners.append({
-                'person_id': earner_data['person'].person_id,
-                'person_name': earner_data['person'].name,
-                'company_name': earner_data['company'].name,
-                'company_ticker': earner_data['company'].ticker,
-                'title': earner_data['role'].title,
-                'total_compensation': earner_data['total_compensation'],
-                'experience': earner_data['person'].experience,
-                'year': earner_data['role'].year
-            })
-
-    # Get league standings
-    league_standings = []
-    for company in league_manager.get_league_standings():
-        league_standings.append({
-            'company': company.to_dict(),
-            'company_id': company.company_id,
-            'cap_info': company.get_cap_info(),
-            'executive_count': company.executive_count
+    for record, company, person in top_records:
+        top_earners.append({
+            'person_id': person.person_id,
+            'person_name': person.full_name,
+            'company_name': company.company_name,
+            'company_ticker': company.ticker,
+            'title': person.current_title,
+            'total_compensation': record.total_comp_usd,
+            'experience': person.years_experience or 0,
+            'year': record.fiscal_year_end.year
         })
 
-    # League-wide summary stats
-    total_budget = sum(team['cap_info']['budget'] for team in league_standings) or 0
-    total_spent = sum(team['cap_info']['total_spent'] for team in league_standings) or 0
+    league_standings = []
+    for company in league_manager.get_league_standings():
+        cap_info = league_manager.get_company_cap_snapshot(company.company_id, year_date)
+        executives = league_manager.get_company_compensation(company.company_id, year_date)
+        league_standings.append({
+            'company': company_to_template_dict(company),
+            'company_id': company.company_id,
+            'cap_info': cap_info,
+            'executive_count': len(executives)
+        })
+
+    total_budget = sum(item['cap_info'].get('budget') or 0 for item in league_standings)
+    total_spent = sum(item['cap_info'].get('total_spent') or 0 for item in league_standings)
     league_summary = {
         'teams': len(league_standings),
         'total_budget': total_budget,
         'total_spent': total_spent,
         'avg_utilization': (total_spent / total_budget * 100) if total_budget else 0,
-        'over_budget_count': len([team for team in league_standings if team['cap_info']['utilization_pct'] > 100])
+        'over_budget_count': len([team for team in league_standings if team['cap_info'].get('remaining', 0) < 0])
     }
 
-    # Cap space leaders and teams over budget (limit for homepage display)
     cap_space_leaders = sorted(
         league_standings,
-        key=lambda team: team['cap_info']['remaining'],
+        key=lambda team: team['cap_info'].get('remaining', 0),
         reverse=True
     )[:5]
+
     over_budget_teams = sorted(
-        [team for team in league_standings if team['cap_info']['utilization_pct'] > 100],
-        key=lambda team: team['cap_info']['utilization_pct'],
+        [team for team in league_standings if team['cap_info'].get('remaining', 0) < 0],
+        key=lambda team: team['cap_info'].get('utilization_pct', 0),
         reverse=True
     )[:5]
-
-    # Position leaders (highest total comp per archetype)
-    category_leaders = {rule['label']: None for rule in ROLE_CATEGORY_RULES}
-    for company in league_manager.companies.values():
-        for role in company.all_roles:
-            if year and str(role.year) != year:
-                continue
-
-            title_lower = role.title.lower()
-            for rule in ROLE_CATEGORY_RULES:
-                allowed_types = rule.get('position_types')
-                if allowed_types and role.position_type not in allowed_types:
-                    continue
-
-                if any(keyword in title_lower for keyword in rule['keywords']):
-                    person = company.get_person_by_id(role.person_id) or league_manager.get_person(role.person_id)
-                    if not person:
-                        continue
-
-                    current_leader = category_leaders.get(rule['label'])
-                    if (current_leader is None or
-                            role.total_compensation > current_leader['role'].total_compensation):
-                        category_leaders[rule['label']] = {
-                            'person': person,
-                            'company': company,
-                            'role': role
-                        }
-                    break
 
     position_leaders = []
     for rule in ROLE_CATEGORY_RULES:
-        leader = category_leaders.get(rule['label'])
-        if not leader:
+        label = rule['label']
+        keywords = rule['keywords']
+
+        matching_records = []
+        for record in league_manager.executive_comp:
+            if year and str(record.fiscal_year_end.year) != year:
+                continue
+
+            person = league_manager.get_person(record.person_id)
+            company = league_manager.get_company(record.company_id)
+            if not person or not company:
+                continue
+
+            title_lower = (person.current_title or '').lower()
+            if any(keyword in title_lower for keyword in keywords):
+                matching_records.append((record, person, company))
+
+        if not matching_records:
             continue
+
+        top_record, top_person, top_company = max(matching_records, key=lambda item: item[0].total_comp_usd)
         position_leaders.append({
-            'label': rule['label'],
-            'person_id': leader['person'].person_id,
-            'person_name': leader['person'].name,
-            'company_name': leader['company'].name,
-            'company_id': leader['company'].company_id,
-            'company_ticker': leader['company'].ticker,
-            'title': leader['role'].title,
-            'total_compensation': leader['role'].total_compensation
+            'label': label,
+            'person_id': top_person.person_id,
+            'person_name': top_person.full_name,
+            'company_name': top_company.company_name,
+            'company_id': top_company.company_id,
+            'company_ticker': top_company.ticker,
+            'title': top_person.current_title,
+            'total_compensation': top_record.total_comp_usd,
         })
 
-    return render_template('index.html',
-                           top_earners=top_earners[:5],
-                           league_standings=league_standings,
-                           league_summary=league_summary,
-                           cap_space_leaders=cap_space_leaders,
-                           over_budget_teams=over_budget_teams,
-                           position_leaders=position_leaders,
-                           selected_year=year,
-                           available_years=available_years)
+    return render_template(
+        'index.html',
+        top_earners=top_earners,
+        league_standings=league_standings,
+        league_summary=league_summary,
+        cap_space_leaders=cap_space_leaders,
+        over_budget_teams=over_budget_teams,
+        position_leaders=position_leaders,
+        selected_year=year,
+        available_years=available_years,
+    )
 
 
 @app.route('/companies')
 def company_list():
     """All Companies with year filtering"""
     year = get_selected_year()
-    companies_data = []
-
     available_years = get_available_year_options()
     if year not in available_years and available_years:
         year = available_years[0]
+    year_date = parse_year_to_date(year)
 
-    for company in league_manager.companies.values():
-        # Filter roles by year if specified
-        if year:
-            year_roles = [r for r in company.all_roles if str(r.year) == year]
-            if not year_roles:
-                continue  # Skip companies with no data for this year
+    companies_data = []
+    for company in league_manager.get_league_standings():
+        company_dict = company_to_template_dict(company)
+        compensation = league_manager.get_company_compensation(company.company_id, year_date)
+        if year and not compensation:
+            continue
 
-            # Calculate cap info for specific year
-            year_spending = sum(r.total_compensation for r in year_roles)
-            cap_info = {
-                'total_spent': year_spending,
-                'budget': company.exec_budget,
-                'remaining': company.exec_budget - year_spending,
-                'utilization_pct': (year_spending / company.exec_budget * 100) if company.exec_budget > 0 else 0
-            }
-
-            c_suite_count = len([r for r in year_roles if r.position_type == 'C-Suite'])
-            board_count = len([r for r in year_roles if r.position_type == 'Board'])
-        else:
-            cap_info = company.get_cap_info()
-            c_suite_count = company.executive_count
-            board_count = company.board_count
+        cap_info = league_manager.get_company_cap_snapshot(company.company_id, year_date)
+        c_suite_count = 0
+        for record in compensation:
+            person = league_manager.get_person(record.person_id)
+            if person and person.is_executive:
+                c_suite_count += 1
+        board_count = get_board_count(league_manager, company.company_id)
 
         companies_data.append({
             'id': company.company_id,
-            'name': company.name,
-            'ticker': company.ticker,
-            'sector': company.sector,
-            'market_cap': company.market_cap,
-            'revenue': company.revenue,
+            'name': company_dict['name'],
+            'ticker': company_dict['ticker'],
+            'sector': company_dict['sector'],
+            'market_cap': company_dict['market_cap'],
+            'revenue': company_dict['revenue'],
             'cap_info': cap_info,
             'c_suite_count': c_suite_count,
             'board_count': board_count,
@@ -306,19 +310,21 @@ def company_list():
             'year': year
         })
 
-    # Sort by cap utilization
-    sorted_companies = sorted(companies_data,
-                              key=lambda x: x['cap_info']['utilization_pct'],
-                              reverse=True)
+    sorted_companies = sorted(
+        companies_data,
+        key=lambda item: item['cap_info'].get('utilization_pct', 0),
+        reverse=True,
+    )
 
-    # Get available years for dropdown
-    return render_template('companies.html',
-                           companies=sorted_companies,
-                           selected_year=year,
-                           available_years=available_years)
+    return render_template(
+        'companies.html',
+        companies=sorted_companies,
+        selected_year=year,
+        available_years=available_years,
+    )
 
 
-@app.route('/company/<int:company_id>')
+@app.route('/company/<company_id>')
 def company_detail(company_id):
     """Team Roster & Cap Space with year filtering"""
     year = get_selected_year()
@@ -326,130 +332,121 @@ def company_detail(company_id):
     if not company:
         return "Company not found", 404
 
-    # Filter roles by year
-    if year:
-        year_roles = [r for r in company.all_roles if str(r.year) == year]
-        year_spending = sum(r.total_compensation for r in year_roles)
+    available_years = get_available_year_options()
+    if year not in available_years and available_years:
+        year = available_years[0]
+    year_date = parse_year_to_date(year)
 
-        cap_info = {
-            'total_spent': year_spending,
-            'budget': company.exec_budget,
-            'remaining': company.exec_budget - year_spending,
-            'utilization_pct': (year_spending / company.exec_budget * 100) if company.exec_budget > 0 else 0,
-            'is_over_budget': year_spending > company.exec_budget
+    cap_info = league_manager.get_company_cap_snapshot(company_id, year_date)
+    company_dict = company_to_template_dict(company)
+    revenue = company_dict['revenue'] or 0
+    if revenue:
+        cap_info['exec_percent_revenue'] = (cap_info.get('total_spent', 0) / revenue) * 100
+    else:
+        cap_info['exec_percent_revenue'] = 0
+
+    compensation_records = league_manager.get_company_compensation(company_id, year_date)
+
+    c_suite = []
+    for record in compensation_records:
+        person = league_manager.get_person(record.person_id)
+        if not person:
+            continue
+        budget = cap_info.get('budget') or 0
+        c_suite.append({
+            'person_id': person.person_id,
+            'name': person.full_name,
+            'title': person.current_title,
+            'position_type': 'C-Suite' if person.is_executive else 'Director',
+            'contract_years': 1,
+            'age': None,
+            'experience': person.years_experience,
+            'base_salary': record.salary_usd,
+            'bonus': record.bonus_usd,
+            'stock_awards': record.stock_awards_usd,
+            'signing_bonus': record.all_other_comp_usd,
+            'share_count': None,
+            'total_compensation': record.total_comp_usd,
+            'cap_hit_pct': (record.total_comp_usd / budget * 100) if budget else 0,
+            'year': record.fiscal_year_end.year,
+        })
+
+    board_profiles = league_manager.get_director_profiles_for_company(company_id)
+    director_comp_records = [
+        record
+        for record in league_manager.director_comp
+        if record.company_id == company_id and (not year_date or record.fiscal_year_end == year_date)
+    ]
+    board_members = []
+    for profile in board_profiles:
+        person = league_manager.get_person(profile.person_id)
+        comp_record = next((r for r in director_comp_records if r.person_id == profile.person_id), None)
+        board_members.append({
+            'person_id': profile.person_id,
+            'name': person.full_name if person else profile.person_id,
+            'title': profile.role,
+            'position_type': 'Board',
+            'contract_years': 1,
+            'age': None,
+            'experience': person.years_experience if person else None,
+            'base_salary': comp_record.fees_cash_usd if comp_record else 0,
+            'bonus': 0,
+            'stock_awards': comp_record.stock_awards_usd if comp_record else 0,
+            'signing_bonus': comp_record.all_other_comp_usd if comp_record else 0,
+            'share_count': None,
+            'total_compensation': comp_record.total_usd if comp_record else 0,
+            'cap_hit_pct': 0,
+            'year': (comp_record.fiscal_year_end.year if comp_record else (year_date.year if year_date else company.fiscal_year_end.year)),
+        })
+
+    director_policies = [
+        policy for policy in league_manager.director_policies if policy.company_id == company_id
+    ]
+
+    director_comp_summary = {}
+    if director_comp_records:
+        board_count = len(director_comp_records)
+        total_cash = sum(r.fees_cash_usd for r in director_comp_records)
+        total_stock = sum(r.stock_awards_usd for r in director_comp_records)
+        total_other = sum(r.all_other_comp_usd for r in director_comp_records)
+        total_comp = sum(r.total_usd for r in director_comp_records)
+        director_comp_summary = {
+            'members': board_count,
+            'avg_cash': total_cash / board_count if board_count else 0,
+            'avg_stock': total_stock / board_count if board_count else 0,
+            'avg_total': total_comp / board_count if board_count else 0,
+            'total_cash': total_cash,
+            'total_stock': total_stock,
+            'total_other': total_other,
+            'total_comp': total_comp,
         }
 
-        # Get executives for this year
-        c_suite = []
-        board_members = []
-
-        for role in year_roles:
-            person = league_manager.get_person(role.person_id)
-            if person:
-                exec_data = {
-                    'person_id': person.person_id,
-                    'name': person.name,
-                    'title': role.title,
-                    'position_type': role.position_type,
-                    'contract_years': role.contract_years,
-                    'age': person.age,
-                    'experience': person.experience,
-                    'base_salary': role.base_salary,
-                    'bonus': role.bonus,
-                    'stock_awards': role.stock_awards,
-                    'signing_bonus': role.signing_bonus,
-                    'share_count': role.share_count,
-                    'total_compensation': role.total_compensation,
-                    'cap_hit_pct': (role.total_compensation / company.exec_budget * 100),
-                    'year': role.year
-                }
-
-                if role.position_type == 'C-Suite':
-                    c_suite.append(exec_data)
-                else:
-                    board_members.append(exec_data)
-
-        # Sort by compensation
-        c_suite.sort(key=lambda x: x['total_compensation'], reverse=True)
-        board_members.sort(key=lambda x: x['total_compensation'], reverse=True)
-
-    else:
-        # Use all years
-        cap_info = company.get_cap_info()
-
-        c_suite_data = company.get_executives_by_position_type('C-Suite')
-        c_suite = []
-        for data in c_suite_data:
-            person = data['person']
-            role = data['role']
-            c_suite.append({
-                'person_id': person.person_id,
-                'name': person.name,
-                'title': role.title,
-                'position_type': role.position_type,
-                'contract_years': role.contract_years,
-                'age': person.age,
-                'experience': person.experience,
-                'base_salary': role.base_salary,
-                'bonus': role.bonus,
-                'stock_awards': role.stock_awards,
-                'signing_bonus': role.signing_bonus,
-                'share_count': role.share_count,
-                'total_compensation': role.total_compensation,
-                'cap_hit_pct': data['cap_hit_pct'],
-                'year': role.year
-            })
-
-        board_data = company.get_executives_by_position_type('Board')
-        board_members = []
-        for data in board_data:
-            person = data['person']
-            role = data['role']
-            board_members.append({
-                'person_id': person.person_id,
-                'name': person.name,
-                'title': role.title,
-                'position_type': role.position_type,
-                'contract_years': role.contract_years,
-                'age': person.age,
-                'experience': person.experience,
-                'base_salary': role.base_salary,
-                'bonus': role.bonus,
-                'stock_awards': role.stock_awards,
-                'signing_bonus': role.signing_bonus,
-                'share_count': role.share_count,
-                'total_compensation': role.total_compensation,
-                'cap_hit_pct': data['cap_hit_pct'],
-                'year': role.year
-            })
-
-    # Prepare chart data
     all_executives = c_suite + board_members
-    chart_labels = [exec['name'] for exec in all_executives]
-    chart_data = [exec['total_compensation'] for exec in all_executives]
+    chart_labels = [item['name'] for item in c_suite]
+    chart_data = [item['total_compensation'] for item in c_suite]
 
-    # Get available years for this company
-    company_years = set()
-    for role in company.all_roles:
-        company_years.add(str(role.year))
-    available_years = sorted(list(company_years), reverse=True)
+    company_years = {record.fiscal_year_end.year for record in league_manager.get_company_compensation(company_id)}
+    available_company_years = sorted({str(yr) for yr in company_years}, reverse=True)
 
     return render_template(
         'company_detail.html',
-        company=company.to_dict(),
+        company=company_dict,
         company_id=company_id,
         cap_info=cap_info,
         c_suite=c_suite,
         board_members=board_members,
+        director_compensation=director_comp_records,
+        director_policies=director_policies,
+        director_comp_summary=director_comp_summary,
         all_executives=all_executives,
         chart_labels=json.dumps(chart_labels),
         chart_data=json.dumps(chart_data),
         selected_year=year,
-        available_years=available_years
+        available_years=available_company_years or available_years,
     )
 
 
-@app.route('/person/<int:person_id>')
+@app.route('/person/<person_id>')
 def person_detail(person_id):
     """Player Profile with year filtering"""
     year = get_selected_year()
@@ -458,48 +455,42 @@ def person_detail(person_id):
         return "Person not found", 404
 
     # Get all roles for this person, optionally filtered by year
+    available_years = get_available_year_options()
+    if year not in available_years and available_years:
+        year = available_years[0]
+    year_date = parse_year_to_date(year)
+
+    compensation_records = league_manager.get_compensation_for_person(person_id, year_date)
+    if not year_date:
+        compensation_records = league_manager.get_compensation_for_person(person_id)
+
     person_roles = []
-    for role in person.roles:
-        if year and str(role.year) != year:
-            continue
+    for record in compensation_records:
+        company = league_manager.get_company(record.company_id)
+        person_roles.append({
+            'company_id': record.company_id,
+            'company_name': company.company_name if company else record.company_id,
+            'company_ticker': company.ticker if company else '',
+            'title': person.current_title,
+            'position_type': 'C-Suite' if person.is_executive else 'Director',
+            'year': record.fiscal_year_end.year,
+            'contract_years': 1,
+            'base_salary': record.salary_usd,
+            'bonus': record.bonus_usd,
+            'stock_awards': record.stock_awards_usd,
+            'signing_bonus': record.all_other_comp_usd,
+            'share_count': None,
+            'total_compensation': record.total_comp_usd
+        })
 
-        company = league_manager.get_company(role.company_id)
-        if company:
-            person_roles.append({
-                'company_id': company.company_id,
-                'company_name': company.name,
-                'company_ticker': company.ticker,
-                'title': role.title,
-                'position_type': role.position_type,
-                'year': role.year,
-                'contract_years': role.contract_years,
-                'base_salary': role.base_salary,
-                'bonus': role.bonus,
-                'stock_awards': role.stock_awards,
-                'signing_bonus': role.signing_bonus,
-                'share_count': role.share_count,
-                'total_compensation': role.total_compensation
-            })
+    person_roles.sort(key=lambda item: item['year'], reverse=True)
 
-    # Sort roles by year (most recent first)
-    person_roles.sort(key=lambda x: x['year'], reverse=True)
-
-    # Calculate career statistics
-    if year:
-        # Stats for specific year
-        year_roles = [r for r in person.roles if str(r.year) == year]
-        total_earnings = sum(r.total_compensation for r in year_roles)
-        years_active = 1 if year_roles else 0
-        companies_count = len(set(r.company_id for r in year_roles))
-        avg_annual = total_earnings
-        highest_single_year = max((r.total_compensation for r in year_roles), default=0)
-    else:
-        # All-time stats
-        total_earnings = person.total_career_earnings
-        years_active = person.years_active
-        companies_count = person.companies_count
-        avg_annual = person.average_annual_compensation
-        highest_single_year = person.highest_single_year_compensation
+    all_records = league_manager.get_compensation_for_person(person_id)
+    total_earnings = sum(rec.total_comp_usd for rec in (compensation_records if year_date else all_records))
+    years_active = len({rec.fiscal_year_end.year for rec in (compensation_records if year_date else all_records)})
+    companies_count = len({rec.company_id for rec in (compensation_records if year_date else all_records)})
+    highest_single_year = max((rec.total_comp_usd for rec in all_records), default=0)
+    avg_annual = (total_earnings / years_active) if years_active else 0
 
     career_stats = {
         'total_earnings': total_earnings,
@@ -509,18 +500,30 @@ def person_detail(person_id):
         'highest_single_year': highest_single_year
     }
 
-    # Get years this person has data for
-    person_years = sorted(list(set(str(r.year) for r in person.roles)), reverse=True)
+    person_years = sorted({str(rec.fiscal_year_end.year) for rec in all_records}, reverse=True)
 
-    # Convert person to dict for template
-    person_dict = person.to_dict()
+    person_dict = {
+        'person_id': person.person_id,
+        'name': person.full_name,
+        'current_title': person.current_title,
+        'is_executive': person.is_executive,
+        'is_director': person.is_director,
+        'bio_short': person.bio_short,
+        'linkedin_url': person.linkedin_url,
+        'photo_url': person.photo_url,
+        'status': person.status,
+        'education': person.education,
+        'years_experience': person.years_experience,
+    }
 
-    return render_template('person_detail.html',
-                           person=person_dict,
-                           roles=person_roles,
-                           career_stats=career_stats,
-                           selected_year=year,
-                           available_years=person_years)
+    return render_template(
+        'person_detail.html',
+        person=person_dict,
+        roles=person_roles,
+        career_stats=career_stats,
+        selected_year=year,
+        available_years=person_years,
+    )
 
 
 @app.route('/free-agents')
@@ -537,30 +540,28 @@ def free_agents():
         last_role = None
         last_comp = 0
 
-        if person.roles:
-            # Get the most recent role (or for specific year)
-            if year:
-                year_roles = [r for r in person.roles if str(r.year) == year]
-                if year_roles:
-                    last_role = max(year_roles, key=lambda x: x.total_compensation)
-            else:
-                last_role = max(person.roles, key=lambda x: x.year)
+        year_date = parse_year_to_date(year)
+        records = league_manager.get_compensation_for_person(person.person_id, year_date)
+        if not year_date:
+            records = league_manager.get_compensation_for_person(person.person_id)
 
-            if last_role:
-                last_comp = last_role.total_compensation
+        if records:
+            last_record = max(records, key=lambda r: r.fiscal_year_end)
+            last_role = last_record
+            last_comp = last_record.total_comp_usd
 
-        if last_role or not year:  # Include person if they have a role for the year, or if showing all
+        if last_role or not year_date:  # Include person if they have a role for the year, or if showing all
             free_agents_list.append({
                 'person_id': person.person_id,
-                'name': person.name,
-                'age': person.age,
-                'experience': person.experience,
+                'name': person.full_name,
+                'age': None,
+                'experience': person.years_experience or 0,
                 'education': person.education,
-                'last_title': last_role.title if last_role else 'N/A',
+                'last_title': person.current_title if last_role else 'N/A',
                 'last_compensation': last_comp,
-                'share_count': last_role.share_count if last_role else None,
-                'previous_companies': person.previous_companies,
-                'last_year': last_role.year if last_role else None
+                'share_count': None,
+                'previous_companies': None,
+                'last_year': last_role.fiscal_year_end.year if last_role else None
             })
 
     # Get available years
@@ -593,7 +594,14 @@ def refresh_data():
         FALLBACK_AVAILABLE_YEARS.clear()
         USING_SAMPLE_DATA = False
 
-        return f"Data refreshed! Loaded {load_result['companies_count']} companies, {load_result['people_count']} people, {load_result['roles_count']} roles for year {year if not load_all else 'all years'}"
+        message = (
+            f"Data refreshed! Loaded {load_result['companies_count']} companies, "
+            f"{load_result['people_count']} people, {load_result['executive_comp_count']} compensation rows "
+            f"for year {year if not load_all else 'all years'}"
+        )
+        if load_result.get('warnings'):
+            message += "\nWarnings:\n" + "\n".join(f" - {warning}" for warning in load_result['warnings'])
+        return message
     else:
         league_manager = load_fortune10_sample_dataset()
         return f"Error refreshing data: {load_result.get('message')}. Loaded bundled Fortune 10 sample data instead."
@@ -603,9 +611,15 @@ def refresh_data():
 def list_company_folders():
     """API endpoint to list available company folders with years"""
     if USING_SAMPLE_DATA:
-        folders = [company.name for company in league_manager.companies.values()]
+        folders = [company.company_name for company in league_manager.companies.values()]
         company_years = {
-            company.name: sorted({str(role.year) for role in company.all_roles}, reverse=True)
+            company.company_name: sorted(
+                {
+                    str(record.fiscal_year_end.year)
+                    for record in league_manager.get_company_compensation(company.company_id)
+                },
+                reverse=True,
+            )
             for company in league_manager.companies.values()
         }
         return jsonify({
@@ -654,29 +668,13 @@ def list_company_folders():
 def league_stats():
     """API endpoint for league-wide statistics"""
     year = get_selected_year()
-
-    if year:
-        # Calculate stats for specific year
-        year_roles = [r for r in league_manager.all_roles if str(r.year) == year]
-        total_spending = sum(r.total_compensation for r in year_roles)
-        companies_with_data = len(set(r.company_id for r in year_roles))
-        people_with_roles = len(set(r.person_id for r in year_roles))
-
-        stats = {
-            'year': year,
-            'total_companies': companies_with_data,
-            'total_people': people_with_roles,
-            'total_roles': len(year_roles),
-            'total_league_spending': total_spending,
-            'avg_compensation': total_spending / len(year_roles) if year_roles else 0
-        }
-    else:
-        stats = league_manager.get_league_statistics()
-
+    fiscal_year = parse_year_to_date(year)
+    stats = league_manager.get_league_statistics(fiscal_year)
+    stats['year'] = year
     return jsonify(stats)
 
 
-@app.route('/api/company/<int:company_id>')
+@app.route('/api/company/<company_id>')
 def company_api(company_id):
     """API endpoint for company data"""
     year = get_selected_year()
@@ -684,24 +682,22 @@ def company_api(company_id):
     if not company:
         return jsonify({'error': 'Company not found'}), 404
 
-    company_data = company.to_dict()
+    company_data = company_to_template_dict(company)
+    year_date = parse_year_to_date(year)
+    cap_info = league_manager.get_company_cap_snapshot(company_id, year_date)
 
-    # Add year-specific data if requested
     if year:
-        year_roles = [r for r in company.all_roles if str(r.year) == year]
-        year_spending = sum(r.total_compensation for r in year_roles)
-
         company_data['year_data'] = {
             'year': year,
-            'total_spent': year_spending,
-            'role_count': len(year_roles),
-            'cap_utilization': (year_spending / company.exec_budget * 100) if company.exec_budget > 0 else 0
+            'cap_info': cap_info,
+            'executive_count': len(league_manager.get_company_compensation(company_id, year_date)),
         }
 
+    company_data['cap_info'] = cap_info
     return jsonify(company_data)
 
 
-@app.route('/api/person/<int:person_id>')
+@app.route('/api/person/<person_id>')
 def person_api(person_id):
     """API endpoint for person data"""
     year = get_selected_year()
@@ -709,20 +705,35 @@ def person_api(person_id):
     if not person:
         return jsonify({'error': 'Person not found'}), 404
 
-    # Include compensation breakdown
-    person_data = person.to_dict()
-    person_data['compensation_breakdown'] = person.get_compensation_breakdown()
+    records = league_manager.get_compensation_for_person(person_id)
+    compensation_breakdown = {
+        'salary_usd': sum(r.salary_usd for r in records),
+        'bonus_usd': sum(r.bonus_usd for r in records),
+        'stock_awards_usd': sum(r.stock_awards_usd for r in records),
+        'all_other_comp_usd': sum(r.all_other_comp_usd for r in records),
+        'total_comp_usd': sum(r.total_comp_usd for r in records),
+    }
 
-    # Add year-specific data if requested
+    person_data = {
+        'person_id': person.person_id,
+        'full_name': person.full_name,
+        'current_title': person.current_title,
+        'is_executive': person.is_executive,
+        'is_director': person.is_director,
+        'status': person.status,
+        'years_experience': person.years_experience,
+        'education': person.education,
+        'compensation_breakdown': compensation_breakdown,
+    }
+
+    year_date = parse_year_to_date(year)
     if year:
-        year_roles = [r for r in person.roles if str(r.year) == year]
-        year_earnings = sum(r.total_compensation for r in year_roles)
-
+        filtered = [r for r in records if r.fiscal_year_end == year_date]
         person_data['year_data'] = {
             'year': year,
-            'total_earnings': year_earnings,
-            'role_count': len(year_roles),
-            'companies': list(set(r.company_id for r in year_roles))
+            'total_earnings': sum(r.total_comp_usd for r in filtered),
+            'role_count': len(filtered),
+            'companies': list({r.company_id for r in filtered})
         }
 
     return jsonify(person_data)
@@ -742,6 +753,14 @@ def available_years():
 @app.route('/api/diagnostic')
 def diagnostic():
     """Diagnostic endpoint to check system status"""
+    if DATA_SOURCE == 'fortune10':
+        return jsonify({
+            'data_source': 'fortune10',
+            'companies_loaded': len(league_manager.companies),
+            'people_loaded': len(league_manager.people),
+            'executive_records_loaded': len(league_manager.executive_comp),
+            'available_years': get_available_year_options(),
+        })
     try:
         # Check GCS connection
         from google.cloud import storage
@@ -771,7 +790,7 @@ def diagnostic():
             'years_in_bucket': sorted(list(years_found)),
             'companies_loaded': len(league_manager.companies),
             'people_loaded': len(league_manager.people),
-            'roles_loaded': len(league_manager.all_roles),
+            'executive_records_loaded': len(league_manager.executive_comp),
             'default_year': DEFAULT_YEAR,
             'current_year': get_selected_year()
         }

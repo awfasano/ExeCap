@@ -1,504 +1,517 @@
-# company_folder_loader.py - Updated for companies/<company>/<year>/files structure
-import pandas as pd
-from google.cloud import storage
-import os
-from pathlib import Path
+"""Loader for company CSV datasets stored in GCS under companies/<slug>/<year>/."""
+
+from __future__ import annotations
+
+import csv
+import io
 import logging
-from typing import Dict, List, Optional, Set
-from models import Company, Person, Role, LeagueManager
+import os
+from datetime import date, datetime
+from typing import Dict, Iterable, List, Optional, Set
+
+from google.cloud import storage
+
+from models import (
+    BeneficialOwnershipRecord,
+    Company,
+    DirectorCompensation,
+    DirectorProfile,
+    ExecutiveCompensation,
+    ExecutiveEquityGrant,
+    LeagueManager,
+    Person,
+    SourceManifestEntry,
+)
 
 logger = logging.getLogger(__name__)
 
+CSV_SUFFIX = ".csv"
+
+
+def _slugify(value: str) -> str:
+    import re
+
+    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    return slug or "unknown"
+
+
+def _to_float(value) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if text == "" or text.lower() in {"na", "n/a", "none"}:
+        return 0.0
+    text = text.replace(",", "").replace("$", "")
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+def _to_int(value) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if text == "" or text.lower() in {"na", "n/a", "none"}:
+        return 0
+    text = text.replace(",", "")
+    try:
+        return int(float(text))
+    except ValueError:
+        return 0
+
+
+def _to_bool(value) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    return text in {"true", "t", "yes", "y", "1"}
+
+
+def _parse_date(value: Optional[str], fallback: Optional[date] = None) -> Optional[date]:
+    if not value:
+        return fallback
+    text = str(value).strip()
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        try:
+            return datetime.strptime(text, "%Y-%m-%d").date()
+        except ValueError:
+            try:
+                return datetime.strptime(text, "%m/%d/%Y").date()
+            except ValueError:
+                return fallback
+
+
+def _get_first(row: Dict[str, str], keys: Iterable[str], default=None):
+    for key in keys:
+        if key in row and row[key] not in (None, ""):
+            return row[key]
+    return default
+
 
 class CompanyFolderLoader:
-    """Load Excel data from company/year organized folders in GCS bucket"""
+    """Load CSV data from company/year organized folders in GCS bucket."""
 
     def __init__(self, bucket_name: str, credentials_path: Optional[str] = None):
         self.bucket_name = bucket_name
-
-        # Initialize GCS client
         if credentials_path:
-            os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = credentials_path
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
 
         self.client = storage.Client()
         self.bucket = self.client.bucket(bucket_name)
 
-        # Local cache directory
-        self.cache_dir = Path("excel_cache")
-        self.cache_dir.mkdir(exist_ok=True)
-
-        # League manager to hold all data
         self.league_manager = LeagueManager()
+        self.load_warnings: List[str] = []
 
-        # Legacy data containers (for backward compatibility)
-        self.companies_data = {}
-        self.people_data = {}
-        self.roles_data = []
+    # ------------------------------------------------------------------
+    # Discovery helpers
+    # ------------------------------------------------------------------
 
     def list_company_folders(self) -> List[str]:
-        """List all company folders in the bucket"""
-        folders = set()
-        blobs = self.bucket.list_blobs(prefix="companies/")
+        folders: Set[str] = set()
+        for blob in self.bucket.list_blobs(prefix="companies/"):
+            parts = blob.name.split("/")
+            if len(parts) >= 2 and parts[0] == "companies" and parts[1]:
+                folders.add(parts[1])
+        return sorted(folders)
 
-        for blob in blobs:
-            # Extract company name from path like "companies/walmart/2024/file.xlsx"
-            path_parts = blob.name.split('/')
-            if len(path_parts) >= 2 and path_parts[0] == "companies":
-                company_name = path_parts[1]
-                folders.add(company_name)
-
-        logger.info(f"Found company folders: {list(folders)}")
-        return list(folders)
-
-    def list_years_for_company(self, company_name: str) -> List[str]:
-        """List all years available for a specific company"""
-        years = set()
-        prefix = f"companies/{company_name}/"
-        blobs = self.bucket.list_blobs(prefix=prefix)
-
-        for blob in blobs:
-            # Extract year from path like "companies/walmart/2024/file.xlsx"
-            path_parts = blob.name.split('/')
-            if len(path_parts) >= 3 and path_parts[0] == "companies" and path_parts[1] == company_name:
-                year = path_parts[2]
-                # Check if it's a valid year (4 digits)
+    def list_years_for_company(self, company_slug: str) -> List[str]:
+        years: Set[str] = set()
+        prefix = f"companies/{company_slug}/"
+        for blob in self.bucket.list_blobs(prefix=prefix):
+            parts = blob.name.split("/")
+            if len(parts) >= 3 and parts[0] == "companies" and parts[1] == company_slug:
+                year = parts[2]
                 if year.isdigit() and len(year) == 4:
                     years.add(year)
+        return sorted(years)
 
-        return sorted(list(years))
+    # ------------------------------------------------------------------
+    # CSV ingestion
+    # ------------------------------------------------------------------
 
-    def list_excel_files_for_company_year(self, company_name: str, year: str = None) -> Dict[str, List[str]]:
-        """
-        List Excel files for a specific company and year, categorized by type.
-        If year is None, gets files from all years.
-        """
-        if year:
-            prefix = f"companies/{company_name}/{year}/"
-        else:
-            prefix = f"companies/{company_name}/"
-
-        blobs = self.bucket.list_blobs(prefix=prefix)
-
-        files = {
-            'company_info': [],
-            'people': [],
-            'executive_pay': [],
-            'other': [],
-            'by_year': {}  # Store files organized by year
-        }
-
-        for blob in blobs:
-            if any(blob.name.lower().endswith(ext) for ext in ['.xlsx', '.xls', '.xlsm']):
-                # Extract year from path
-                path_parts = blob.name.split('/')
-                file_year = None
-                if len(path_parts) >= 4 and path_parts[2].isdigit():
-                    file_year = path_parts[2]
-
-                filename_lower = blob.name.lower()
-
-                # Store by year
-                if file_year:
-                    if file_year not in files['by_year']:
-                        files['by_year'][file_year] = {
-                            'company_info': [],
-                            'people': [],
-                            'executive_pay': [],
-                            'other': []
-                        }
-
-                    year_files = files['by_year'][file_year]
-                else:
-                    year_files = files
-
-                # Categorize files based on filename
-                if any(keyword in filename_lower for keyword in ['company', 'info', 'information', 'details']):
-                    files['company_info'].append(blob.name)
-                    if file_year:
-                        year_files['company_info'].append(blob.name)
-                elif any(keyword in filename_lower for keyword in ['people', 'executives', 'personnel', 'employees']):
-                    files['people'].append(blob.name)
-                    if file_year:
-                        year_files['people'].append(blob.name)
-                elif any(keyword in filename_lower for keyword in ['pay', 'compensation', 'salary', 'executive']):
-                    files['executive_pay'].append(blob.name)
-                    if file_year:
-                        year_files['executive_pay'].append(blob.name)
-                else:
-                    files['other'].append(blob.name)
-                    if file_year:
-                        year_files['other'].append(blob.name)
-
-        return files
-
-    def download_excel_file(self, blob_name: str) -> Path:
-        """Download Excel file from GCS"""
+    def _read_csv_blob(self, blob_name: str) -> List[Dict[str, str]]:
         blob = self.bucket.blob(blob_name)
+        try:
+            try:
+                contents = blob.download_as_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                contents = blob.download_as_text(encoding="latin-1")
+        except Exception as exc:
+            message = f"Failed to download {blob_name}: {exc}"
+            logger.warning(message)
+            self.load_warnings.append(message)
+            return []
 
-        # Create nested directory structure for cache
-        path_parts = blob_name.split('/')
-        if len(path_parts) >= 4:  # companies/company/year/file.xlsx
-            company = path_parts[1]
-            year = path_parts[2]
-            filename = path_parts[-1]
-            local_file = self.cache_dir / company / year / filename
+        reader = csv.DictReader(io.StringIO(contents))
+        rows = [
+            {
+                (k.strip() if isinstance(k, str) else k): (v.strip() if isinstance(v, str) else v)
+                for k, v in row.items()
+            }
+            for row in reader
+        ]
+        if not rows:
+            message = f"No rows found in {blob_name}"
+            logger.warning(message)
+            self.load_warnings.append(message)
         else:
-            local_file = self.cache_dir / Path(blob_name).name
+            logger.debug("Loaded %s rows from %s", len(rows), blob_name)
+        return rows
 
-        # Create parent directories if needed
-        local_file.parent.mkdir(parents=True, exist_ok=True)
+    def _ensure_company(self, company_slug: str, manifest_row: Dict[str, str], year: str) -> Company:
+        company = self.league_manager.get_company(company_slug)
+        fiscal_year_end = _parse_date(
+            manifest_row.get("fiscal_year_end"),
+            fallback=date(int(year), 12, 31),
+        )
 
-        blob.download_to_filename(str(local_file))
-        logger.info(f"Downloaded {blob_name}")
-        return local_file
-
-    def load_company_from_file(self, file_path: str, company_name: str, year: str = None) -> Optional[Company]:
-        """Load company information from Excel file and create Company instance"""
-        try:
-            local_file = self.download_excel_file(file_path)
-
-            # Try different sheet names
-            df = None
-            excel_file = pd.ExcelFile(local_file)
-            for sheet_name in excel_file.sheet_names:
-                try:
-                    df = pd.read_excel(local_file, sheet_name=sheet_name)
-                    if len(df) > 0:
-                        break
-                except:
-                    continue
-
-            if df is None or len(df) == 0:
-                logger.warning(f"No data found in {file_path}")
-                return None
-
-            # Filter by year if specified and year column exists
-            if year and 'year' in df.columns:
-                year_int = int(year)
-                df_year = df[df['year'] == year_int]
-                if len(df_year) > 0:
-                    row = df_year.iloc[0]
-                else:
-                    row = df.iloc[0]
-            else:
-                row = df.iloc[0]
-
-            # Try to find row for this company if multiple companies in file
-            if 'name' in df.columns or 'company_name' in df.columns:
-                name_col = 'name' if 'name' in df.columns else 'company_name'
-                company_rows = df[df[name_col].str.contains(company_name, case=False, na=False)]
-                if len(company_rows) > 0:
-                    row = company_rows.iloc[0]
-
-            # Generate unique company ID based on company name
-            company_id = abs(hash(company_name.lower())) % 1000 + 100
-
-            # Create Company instance
+        if not company:
             company = Company(
-                company_id=company_id,
-                name=str(row.get('name', row.get('company_name', company_name.title()))),
-                ticker=str(row.get('ticker', row.get('symbol', 'UNK'))),
-                sector=str(row.get('sector', row.get('industry', 'Technology'))),
-                market_cap=float(row.get('market_cap', row.get('market_capitalization', 0))),
-                revenue=float(row.get('revenue', row.get('annual_revenue', 0))),
-                exec_budget=float(row.get('exec_budget', row.get('executive_budget', 50000000))),
-                founded=int(row.get('founded', row.get('year_founded', 2000)))
+                company_id=company_slug,
+                company_name=manifest_row.get("company_name", company_slug.replace("-", " ").title()),
+                ticker=manifest_row.get("ticker", manifest_row.get("stock_ticker", "UNK")),
+                fiscal_year_end=fiscal_year_end or date(int(year), 12, 31),
+                source_url=manifest_row.get("source_url", ""),
+                notes=manifest_row.get("notes"),
+                market_cap_usd=_to_float(manifest_row.get("market_cap_usd")),
+                revenue_usd=_to_float(manifest_row.get("revenue_usd")),
+                cap_budget_usd=_to_float(manifest_row.get("cap_budget_usd")),
+                sector=manifest_row.get("sector"),
+                founded_year=_to_int(manifest_row.get("founded_year")),
             )
-
-            # Add to league manager
             self.league_manager.add_company(company)
+        else:
+            # Update mutable fields if new information arrives
+            company.company_name = manifest_row.get("company_name", company.company_name)
+            company.ticker = manifest_row.get("ticker", company.ticker)
+            company.fiscal_year_end = fiscal_year_end or company.fiscal_year_end
+            company.source_url = manifest_row.get("source_url", company.source_url)
+            company.notes = manifest_row.get("notes", company.notes)
+            company.market_cap_usd = _to_float(manifest_row.get("market_cap_usd")) or company.market_cap_usd
+            company.revenue_usd = _to_float(manifest_row.get("revenue_usd")) or company.revenue_usd
+            company.cap_budget_usd = _to_float(manifest_row.get("cap_budget_usd")) or company.cap_budget_usd
+            company.sector = manifest_row.get("sector", company.sector)
+            founded_year = _to_int(manifest_row.get("founded_year"))
+            company.founded_year = founded_year or company.founded_year
 
-            # Store in legacy format for backward compatibility
-            self.companies_data[company_id] = company.to_dict()
+        return company
 
-            logger.info(f"Loaded company: {company.name} (year: {year or 'all'})")
-            return company
+    def _ensure_person(
+        self,
+        person_id: Optional[str],
+        full_name: str,
+        *,
+        current_title: str = "",
+        is_executive: bool = False,
+        is_director: bool = False,
+        bio_short: Optional[str] = None,
+        linkedin_url: Optional[str] = None,
+        photo_url: Optional[str] = None,
+        years_experience: Optional[int] = None,
+        education: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Person:
+        slug = person_id or _slugify(full_name)
+        person = self.league_manager.get_person(slug)
+        if not person:
+            person = Person(
+                person_id=slug,
+                full_name=full_name,
+                current_title=current_title,
+                is_executive=is_executive,
+                is_director=is_director,
+                bio_short=bio_short,
+                linkedin_url=linkedin_url,
+                photo_url=photo_url,
+                years_experience=years_experience,
+                education=education,
+                status=status,
+            )
+            self.league_manager.add_person(person)
+        else:
+            if current_title:
+                person.current_title = current_title
+            if bio_short and not person.bio_short:
+                person.bio_short = bio_short
+            if linkedin_url and not person.linkedin_url:
+                person.linkedin_url = linkedin_url
+            if photo_url and not person.photo_url:
+                person.photo_url = photo_url
+            if years_experience and not person.years_experience:
+                person.years_experience = years_experience
+            if education and not person.education:
+                person.education = education
+            if status:
+                person.status = status
+            person.is_executive = person.is_executive or is_executive
+            person.is_director = person.is_director or is_director
 
-        except Exception as e:
-            logger.error(f"Error loading company data from {file_path}: {e}")
-            return None
+        return person
 
-    def load_people_from_file(self, file_path: str, company_name: str, year: str = None) -> List[Person]:
-        """Load people data from Excel file and create Person instances"""
-        try:
-            local_file = self.download_excel_file(file_path)
+    def _import_manifest(self, company_slug: str, year: str, blob_name: str) -> Dict[str, str]:
+        rows = self._read_csv_blob(blob_name)
+        manifest = rows[0] if rows else {}
+        for row in rows:
+            entry = SourceManifestEntry(
+                company_id=company_slug,
+                file_path=row.get("file_path", ""),
+                description=row.get("description", ""),
+                last_updated=_parse_date(row.get("last_updated"), fallback=date.today()) or date.today(),
+            )
+            self.league_manager.add_source_manifest_entry(entry)
+        manifest.setdefault("company_name", manifest.get("name"))
+        manifest.setdefault("ticker", manifest.get("symbol"))
+        manifest.setdefault("fiscal_year_end", manifest.get("year_end"))
+        return manifest
 
-            # Try different sheet names
-            df = None
-            excel_file = pd.ExcelFile(local_file)
-            for sheet_name in excel_file.sheet_names:
-                try:
-                    df = pd.read_excel(local_file, sheet_name=sheet_name)
-                    if len(df) > 0:
-                        break
-                except:
-                    continue
+    def _import_executive_compensation(
+        self,
+        company: Company,
+        year: str,
+        blob_name: str,
+    ) -> None:
+        rows = self._read_csv_blob(blob_name)
+        for row in rows:
+            full_name = _get_first(row, ["full_name", "executive_name", "name"], default="")
+            if not full_name:
+                continue
+            person = self._ensure_person(
+                row.get("person_id"),
+                full_name,
+                current_title=row.get("current_title", row.get("title", "")),
+                is_executive=True,
+                bio_short=row.get("bio_short"),
+                linkedin_url=row.get("linkedin_url"),
+                photo_url=row.get("photo_url"),
+                years_experience=_to_int(row.get("years_experience")),
+                education=row.get("education"),
+                status=row.get("status"),
+            )
+            fiscal_year = _parse_date(row.get("fiscal_year_end"), fallback=date(int(year), 12, 31))
+            record = ExecutiveCompensation(
+                company_id=company.company_id,
+                person_id=person.person_id,
+                fiscal_year_end=fiscal_year or date(int(year), 12, 31),
+                salary_usd=_to_float(row.get("salary_usd")),
+                bonus_usd=_to_float(row.get("bonus_usd")),
+                stock_awards_usd=_to_float(row.get("stock_awards_usd")),
+                option_awards_usd=_to_float(row.get("option_awards_usd")),
+                non_equity_incentive_usd=_to_float(row.get("non_equity_incentive_usd")),
+                pension_change_usd=_to_float(row.get("pension_change_usd")),
+                all_other_comp_usd=_to_float(row.get("all_other_comp_usd")),
+                total_comp_usd=_to_float(row.get("total_comp_usd", row.get("total_compensation_usd"))),
+                source=row.get("source", f"{year} Proxy Statement"),
+            )
+            self.league_manager.add_executive_comp(record)
 
-            if df is None:
-                return []
+    def _import_equity_grants(self, company: Company, blob_name: str) -> None:
+        rows = self._read_csv_blob(blob_name)
+        for row in rows:
+            full_name = _get_first(row, ["full_name", "executive_name", "name"], default="")
+            if not full_name:
+                continue
+            person = self._ensure_person(
+                row.get("person_id"),
+                full_name,
+                current_title=row.get("current_title", row.get("title", "")),
+                is_executive=True,
+            )
+            grant_date = _parse_date(row.get("grant_date"))
+            record = ExecutiveEquityGrant(
+                company_id=company.company_id,
+                person_id=person.person_id,
+                grant_date=grant_date or company.fiscal_year_end,
+                award_type=row.get("type", row.get("award_type", "")),
+                threshold_units=_to_int(row.get("threshold_units")),
+                target_units=_to_int(row.get("target_units")),
+                max_units=_to_int(row.get("max_units")),
+                grant_date_fair_value_usd=_to_float(row.get("grant_date_fair_value_usd")),
+                vesting_schedule_short=row.get("vesting_schedule_short", row.get("vesting_schedule")),
+                source=row.get("source", f"{company.fiscal_year_end.year} Plan-Based Awards"),
+            )
+            self.league_manager.add_equity_grant(record)
 
-            # Filter by year if specified and year column exists
-            if year and 'year' in df.columns:
-                year_int = int(year)
-                df = df[df['year'] == year_int]
+    def _import_beneficial_ownership(self, company: Company, blob_name: str) -> None:
+        rows = self._read_csv_blob(blob_name)
+        for row in rows:
+            full_name = _get_first(row, ["full_name", "name"], default="")
+            if not full_name:
+                continue
+            person = self._ensure_person(
+                row.get("person_id"),
+                full_name,
+                current_title=row.get("current_title", row.get("title", "")),
+                is_executive=_to_bool(row.get("is_executive")),
+                is_director=_to_bool(row.get("is_director")),
+            )
+            record = BeneficialOwnershipRecord(
+                company_id=company.company_id,
+                person_id=person.person_id,
+                role=row.get("role", person.current_title),
+                total_shares=_to_int(row.get("total_shares")),
+                sole_voting_power=_to_int(row.get("sole_voting_power")),
+                shared_voting_power=_to_int(row.get("shared_voting_power")),
+                percent_of_class=_to_float(row.get("percent_of_class")),
+                as_of_date=_parse_date(row.get("as_of_date"), fallback=company.fiscal_year_end) or company.fiscal_year_end,
+                notes=row.get("notes"),
+            )
+            self.league_manager.add_beneficial_ownership(record)
 
-            people_list = []
-            for index, row in df.iterrows():
-                # Generate unique person ID
-                person_name = str(row.get('name', row.get('full_name', f'Person {index}')))
-                person_id = abs(hash(f"{company_name}_{person_name}".lower())) % 10000 + 1
+    def _import_director_compensation(self, company: Company, blob_name: str) -> None:
+        rows = self._read_csv_blob(blob_name)
+        for row in rows:
+            full_name = _get_first(row, ["full_name", "director_name", "name"], default="")
+            if not full_name:
+                continue
+            person = self._ensure_person(
+                row.get("person_id"),
+                full_name,
+                current_title=row.get("role", row.get("title", "Director")),
+                is_director=True,
+            )
+            fiscal_year = _parse_date(row.get("fiscal_year_end"), fallback=company.fiscal_year_end)
+            record = DirectorCompensation(
+                company_id=company.company_id,
+                person_id=person.person_id,
+                fiscal_year_end=fiscal_year or company.fiscal_year_end,
+                fees_cash_usd=_to_float(row.get("fees_cash_usd")),
+                stock_awards_usd=_to_float(row.get("stock_awards_usd")),
+                all_other_comp_usd=_to_float(row.get("all_other_comp_usd")),
+                total_usd=_to_float(row.get("total_usd", row.get("total_comp_usd"))),
+                source=row.get("source", f"{company.fiscal_year_end.year} Director Compensation"),
+            )
+            self.league_manager.add_director_comp(record)
 
-                # Check if person already exists
-                existing_person = self.league_manager.get_person(person_id)
-                if existing_person:
-                    # Update existing person if needed
-                    people_list.append(existing_person)
-                    continue
+    def _import_director_profiles(self, company: Company, blob_name: str) -> None:
+        rows = self._read_csv_blob(blob_name)
+        for row in rows:
+            full_name = _get_first(row, ["full_name", "director_name", "name"], default="")
+            if not full_name:
+                continue
+            person = self._ensure_person(
+                row.get("person_id"),
+                full_name,
+                current_title=row.get("role", row.get("title", "Director")),
+                is_director=True,
+            )
+            profile = DirectorProfile(
+                company_id=company.company_id,
+                person_id=person.person_id,
+                role=row.get("role", person.current_title),
+                independent=_to_bool(row.get("independent", True)),
+                director_since=_to_int(row.get("director_since")) or None,
+                lead_independent_director=_to_bool(row.get("lead_independent_director")),
+                committees=row.get("committees"),
+                primary_occupation=row.get("primary_occupation"),
+                other_public_boards=row.get("other_public_boards"),
+            )
+            self.league_manager.add_director_profile(profile)
 
-                # Handle previous companies
-                prev_companies = row.get('previous_companies', '')
-                if isinstance(prev_companies, str) and prev_companies:
-                    prev_companies_list = [c.strip() for c in prev_companies.split(',')]
-                else:
-                    prev_companies_list = []
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
-                # Create Person instance
-                person = Person(
-                    person_id=person_id,
-                    name=person_name,
-                    age=int(row.get('age', 45)) if pd.notna(row.get('age')) else 45,
-                    experience=int(row.get('experience', row.get('years_experience', 10)))
-                    if pd.notna(row.get('experience', row.get('years_experience'))) else 10,
-                    education=str(row.get('education', row.get('degree', 'MBA'))),
-                    status=str(row.get('status', 'Active')),
-                    previous_companies=prev_companies_list
-                )
+    def load_company_year(self, company_slug: str, year: str) -> None:
+        prefix = f"companies/{company_slug}/{year}/"
+        blobs = list(self.bucket.list_blobs(prefix=prefix))
+        if not blobs:
+            message = f"No files found for {company_slug} {year}"
+            logger.info(message)
+            self.load_warnings.append(message)
+            return
 
-                # Add to league manager
-                self.league_manager.add_person(person)
-                people_list.append(person)
+        manifest_row: Dict[str, str] = {}
+        for blob in blobs:
+            filename = blob.name.split("/")[-1].lower()
+            if filename.endswith("_manifest.csv"):
+                manifest_row = self._import_manifest(company_slug, year, blob.name)
+                break
 
-                # Store in legacy format
-                self.people_data[person_id] = person.to_dict()
+        if not manifest_row:
+            message = f"Manifest not found for {company_slug} {year}; using defaults"
+            logger.warning(message)
+            self.load_warnings.append(message)
 
-            logger.info(f"Loaded {len(people_list)} people for {company_name} (year: {year or 'all'})")
-            return people_list
+        company = self._ensure_company(company_slug, manifest_row, year)
 
-        except Exception as e:
-            logger.error(f"Error loading people data from {file_path}: {e}")
-            return []
-
-    def load_roles_from_file(self, file_path: str, company_name: str, year: str = None) -> List[Role]:
-        """Load executive compensation data from Excel file and create Role instances"""
-        try:
-            local_file = self.download_excel_file(file_path)
-
-            # Try different sheet names
-            df = None
-            excel_file = pd.ExcelFile(local_file)
-            for sheet_name in excel_file.sheet_names:
-                try:
-                    df = pd.read_excel(local_file, sheet_name=sheet_name)
-                    if len(df) > 0:
-                        break
-                except:
-                    continue
-
-            if df is None:
-                return []
-
-            # Get company ID
-            company_id = abs(hash(company_name.lower())) % 1000 + 100
-
-            # Determine year from file path or dataframe
-            if year:
-                file_year = int(year)
-            elif 'year' in df.columns and pd.notna(df['year'].iloc[0]):
-                file_year = int(df['year'].iloc[0])
+        recognized_files = 0
+        for blob in blobs:
+            filename = blob.name.split("/")[-1].lower()
+            if not filename.endswith(CSV_SUFFIX):
+                continue
+            if filename.endswith("_manifest.csv"):
+                continue
+            if "executive_compensation" in filename:
+                self._import_executive_compensation(company, year, blob.name)
+                recognized_files += 1
+            elif "executive_equity_grants" in filename:
+                self._import_equity_grants(company, blob.name)
+                recognized_files += 1
+            elif "beneficial_ownership" in filename:
+                self._import_beneficial_ownership(company, blob.name)
+                recognized_files += 1
+            elif "director_compensation" in filename:
+                self._import_director_compensation(company, blob.name)
+                recognized_files += 1
+            elif "directors_profiles" in filename or "director_profiles" in filename:
+                self._import_director_profiles(company, blob.name)
+                recognized_files += 1
             else:
-                # Try to extract from file path
-                path_parts = file_path.split('/')
-                file_year = 2024  # Default
-                for part in path_parts:
-                    if part.isdigit() and len(part) == 4:
-                        file_year = int(part)
-                        break
+                logger.debug("Skipping unrecognized file %s", blob.name)
 
-            roles_list = []
-            for index, row in df.iterrows():
-                # Generate person ID from name if not provided
-                if 'person_id' in row and pd.notna(row['person_id']):
-                    person_id = int(row['person_id'])
-                else:
-                    person_name = str(row.get('name', row.get('executive_name', f'Person {index}')))
-                    person_id = abs(hash(f"{company_name}_{person_name}".lower())) % 10000 + 1
+        if recognized_files == 0:
+            message = f"No recognized CSVs for {company_slug} {year}"
+            logger.warning(message)
+            self.load_warnings.append(message)
 
-                # Use year from row if available, otherwise use file year
-                role_year = int(row.get('year', file_year)) if pd.notna(row.get('year')) else file_year
+    def load_all_company_data(
+        self,
+        specific_year: Optional[str] = None,
+        load_all_years: bool = False,
+    ) -> Dict[str, object]:
+        self.league_manager = LeagueManager()
 
-                # Create Role instance
-                role = Role(
-                    person_id=person_id,
-                    company_id=company_id,
-                    title=str(row.get('title', row.get('position', 'Executive'))),
-                    position_type=str(row.get('position_type', row.get('type', 'C-Suite'))),
-                    year=role_year,
-                    contract_years=int(row.get('contract_years', row.get('contract_length', 3)))
-                    if pd.notna(row.get('contract_years', row.get('contract_length'))) else 3,
-                    base_salary=float(row.get('base_salary', row.get('salary', 1000000)))
-                    if pd.notna(row.get('base_salary', row.get('salary'))) else 1000000,
-                    bonus=float(row.get('bonus', 0)) if pd.notna(row.get('bonus')) else 0,
-                    stock_awards=float(row.get('stock_awards', row.get('equity', 0)))
-                    if pd.notna(row.get('stock_awards', row.get('equity'))) else 0,
-                    signing_bonus=float(row.get('signing_bonus', 0))
-                    if pd.notna(row.get('signing_bonus')) else 0
-                )
+        self.load_warnings = []
 
-                # Add to league manager (this will link to person and company)
-                self.league_manager.add_role(role)
-                roles_list.append(role)
-
-                # Store in legacy format
-                self.roles_data.append(role.to_dict())
-
-            logger.info(f"Loaded {len(roles_list)} roles for {company_name} (year: {year or file_year})")
-            return roles_list
-
-        except Exception as e:
-            logger.error(f"Error loading executive pay from {file_path}: {e}")
-            return []
-
-    def load_company_data_for_year(self, company_name: str, year: str) -> Dict:
-        """Load all data for a specific company and year"""
-        logger.info(f"Loading data for {company_name} - Year {year}")
-
-        # Get files for this company and year
-        company_files = self.list_excel_files_for_company_year(company_name, year)
-
-        results = {
-            'company': None,
-            'people': [],
-            'roles': []
-        }
-
-        # Check if this year has files
-        if year in company_files['by_year']:
-            year_files = company_files['by_year'][year]
-
-            # Load company information
-            if year_files['company_info']:
-                results['company'] = self.load_company_from_file(
-                    year_files['company_info'][0], company_name, year)
-
-            # Load people data
-            if year_files['people']:
-                results['people'] = self.load_people_from_file(
-                    year_files['people'][0], company_name, year)
-
-            # Load executive pay data
-            if year_files['executive_pay']:
-                results['roles'] = self.load_roles_from_file(
-                    year_files['executive_pay'][0], company_name, year)
-
-            # Try loading from 'other' files if main categories are empty
-            if not (year_files['company_info'] or year_files['people'] or year_files['executive_pay']):
-                for other_file in year_files['other']:
-                    logger.info(f"Trying to load from other file: {other_file}")
-                    try:
-                        roles = self.load_roles_from_file(other_file, company_name, year)
-                        if roles:
-                            results['roles'].extend(roles)
-                    except:
-                        pass
-
-        return results
-
-    def load_all_company_data(self, company_names: List[str] = None,
-                              specific_year: str = None,
-                              load_all_years: bool = True) -> Dict:
-        """
-        Load data for all companies or specified companies.
-
-        Args:
-            company_names: List of company names to load (None = all)
-            specific_year: Load only this year (e.g., '2024')
-            load_all_years: If True, load all available years for each company
-        """
         try:
-            # Reset league manager
-            self.league_manager = LeagueManager()
-            self.companies_data = {}
-            self.people_data = {}
-            self.roles_data = []
-
-            # Get all company folders if none specified
-            if company_names is None:
-                company_names = self.list_company_folders()
-
-            for company_name in company_names:
-                logger.info(f"Loading data for {company_name}")
-
-                if specific_year:
-                    # Load only specific year
-                    self.load_company_data_for_year(company_name, specific_year)
+            company_slugs = self.list_company_folders()
+            for company_slug in company_slugs:
+                years = self.list_years_for_company(company_slug)
+                if specific_year and specific_year in years:
+                    target_years = [specific_year]
                 elif load_all_years:
-                    # Load all available years
-                    years = self.list_years_for_company(company_name)
-                    if years:
-                        for year in years:
-                            self.load_company_data_for_year(company_name, year)
-                    else:
-                        # No year folders, try loading from root company folder
-                        logger.info(f"No year folders found for {company_name}, checking root folder")
-                        company_files = self.list_excel_files_for_company_year(company_name)
-
-                        # Load from non-year-specific files
-                        if company_files['company_info']:
-                            self.load_company_from_file(company_files['company_info'][0], company_name)
-                        if company_files['people']:
-                            self.load_people_from_file(company_files['people'][0], company_name)
-                        if company_files['executive_pay']:
-                            self.load_roles_from_file(company_files['executive_pay'][0], company_name)
+                    target_years = years
+                elif years:
+                    target_years = [max(years)]
                 else:
-                    # Load most recent year only
-                    years = self.list_years_for_company(company_name)
-                    if years:
-                        most_recent_year = max(years)
-                        self.load_company_data_for_year(company_name, most_recent_year)
+                    target_years = []
+
+                for year in target_years:
+                    logger.info("Loading %s %s", company_slug, year)
+                    self.load_company_year(company_slug, year)
 
             return {
-                'status': 'success',
-                'companies_loaded': list(company_names),
-                'companies_count': len(self.league_manager.companies),
-                'people_count': len(self.league_manager.people),
-                'roles_count': len(self.league_manager.all_roles),
-                'league_manager': self.league_manager
+                "status": "success",
+                "companies_loaded": list(self.league_manager.companies.keys()),
+                "companies_count": len(self.league_manager.companies),
+                "people_count": len(self.league_manager.people),
+                "executive_comp_count": len(self.league_manager.executive_comp),
+                "years_loaded": [str(d.year) for d in self.league_manager.get_available_years()],
+                "warnings": self.load_warnings,
+                "league_manager": self.league_manager,
             }
-
-        except Exception as e:
-            logger.error(f"Error loading company data: {e}")
-            return {'status': 'error', 'message': str(e)}
+        except Exception as exc:
+            logger.exception("Failed to load company data: %s", exc)
+            return {"status": "error", "message": str(exc), "warnings": self.load_warnings}
 
     def get_league_manager(self) -> LeagueManager:
-        """Get the populated league manager"""
         return self.league_manager
-
-    def get_companies(self) -> Dict:
-        """Get loaded companies data (legacy format for backward compatibility)"""
-        return self.companies_data
-
-    def get_people(self) -> Dict:
-        """Get loaded people data (legacy format for backward compatibility)"""
-        return self.people_data
-
-    def get_roles(self) -> List:
-        """Get loaded roles data (legacy format for backward compatibility)"""
-        return self.roles_data
-
-    def get_available_years(self) -> Set[str]:
-        """Get all unique years across all companies"""
-        all_years = set()
-        for company in self.list_company_folders():
-            years = self.list_years_for_company(company)
-            all_years.update(years)
-        return all_years

@@ -1,418 +1,361 @@
-# models.py
-from typing import List, Dict, Optional
-from datetime import datetime
+# models.py - normalized core schema for ExecuCap
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from datetime import date
+from typing import Dict, List, Optional, Tuple
+
+
+# ---------------------------------------------------------------------------
+# Core Entities
+# ---------------------------------------------------------------------------
 
 
 @dataclass
-class Role:
-    """Represents a role/position held by a person at a company"""
-    person_id: int
-    company_id: int
-    title: str
-    position_type: str  # 'C-Suite' or 'Board'
-    year: int
-    contract_years: int
-    base_salary: float
-    bonus: float = 0
-    stock_awards: float = 0
-    signing_bonus: float = 0
-    share_count: Optional[float] = None
-
-    @property
-    def total_compensation(self) -> float:
-        """Calculate total compensation for this role"""
-        return (self.base_salary + self.bonus +
-                self.stock_awards + self.signing_bonus)
-
-    def to_dict(self) -> Dict:
-        """Convert role to dictionary"""
-        return {
-            'person_id': self.person_id,
-            'company_id': self.company_id,
-            'title': self.title,
-            'position_type': self.position_type,
-            'year': self.year,
-            'contract_years': self.contract_years,
-            'base_salary': self.base_salary,
-            'bonus': self.bonus,
-            'stock_awards': self.stock_awards,
-            'signing_bonus': self.signing_bonus,
-            'share_count': self.share_count,
-            'total_compensation': self.total_compensation
-        }
-
-
-class Person:
-    """Represents an executive or board member"""
-
-    def __init__(self, person_id: int, name: str, age: int = 45,
-                 experience: int = 10, education: str = "MBA",
-                 status: str = "Active", previous_companies: List[str] = None):
-        self.person_id = person_id
-        self.name = name
-        self.age = age
-        self.experience = experience
-        self.education = education
-        self.status = status  # 'Active' or 'Retired'
-        self.previous_companies = previous_companies or []
-        self.roles: List[Role] = []  # All roles this person has held
-        self.current_role: Optional[Role] = None
-
-    def add_role(self, role: Role) -> None:
-        """Add a role to this person's history"""
-        self.roles.append(role)
-        # Update current role if it's the most recent
-        if not self.current_role or role.year >= self.current_role.year:
-            self.current_role = role
-
-    @property
-    def is_free_agent(self) -> bool:
-        """Check if person is available (retired/free agent)"""
-        return self.status == "Retired"
-
-    @property
-    def total_career_earnings(self) -> float:
-        """Calculate total career earnings across all roles"""
-        return sum(role.total_compensation for role in self.roles)
-
-    @property
-    def years_active(self) -> int:
-        """Calculate number of years active"""
-        if not self.roles:
-            return 0
-        years = set(role.year for role in self.roles)
-        return len(years)
-
-    @property
-    def average_annual_compensation(self) -> float:
-        """Calculate average annual compensation"""
-        if self.years_active == 0:
-            return 0
-        return self.total_career_earnings / self.years_active
-
-    @property
-    def highest_single_year_compensation(self) -> float:
-        """Find highest single year compensation"""
-        if not self.roles:
-            return 0
-        return max(role.total_compensation for role in self.roles)
-
-    @property
-    def companies_count(self) -> int:
-        """Count unique companies worked for"""
-        return len(set(role.company_id for role in self.roles))
-
-    def get_compensation_breakdown(self) -> Dict[str, float]:
-        """Get breakdown of compensation by type"""
-        total_base = sum(role.base_salary for role in self.roles)
-        total_bonus = sum(role.bonus for role in self.roles)
-        total_stock = sum(role.stock_awards for role in self.roles)
-        total_signing = sum(role.signing_bonus for role in self.roles)
-
-        return {
-            'base_salary': total_base,
-            'bonus': total_bonus,
-            'stock_awards': total_stock,
-            'signing_bonus': total_signing,
-            'total': self.total_career_earnings
-        }
-
-    def to_dict(self) -> Dict:
-        """Convert person to dictionary"""
-        return {
-            'person_id': self.person_id,
-            'name': self.name,
-            'age': self.age,
-            'experience': self.experience,
-            'education': self.education,
-            'status': self.status,
-            'previous_companies': self.previous_companies,
-            'total_career_earnings': self.total_career_earnings,
-            'years_active': self.years_active,
-            'current_role': self.current_role.to_dict() if self.current_role else None
-        }
-
-
 class Company:
-    """Represents a company with executives and board members"""
+    """Represents a public company covered by the dataset."""
 
-    def __init__(self, company_id: int, name: str, ticker: str = "UNK",
-                 sector: str = "Technology", market_cap: float = 0,
-                 revenue: float = 0, exec_budget: float = 50000000,
-                 founded: int = 2000):
-        self.company_id = company_id
-        self.name = name
-        self.ticker = ticker
-        self.sector = sector
-        self.market_cap = market_cap
-        self.revenue = revenue
-        self.exec_budget = exec_budget
-        self.founded = founded
+    company_id: str  # slug-like ID (e.g., walmart, amazon)
+    company_name: str
+    ticker: str
+    fiscal_year_end: date
+    source_url: str
+    notes: Optional[str] = None
+    market_cap_usd: Optional[float] = None
+    revenue_usd: Optional[float] = None
+    cap_budget_usd: Optional[float] = None
+    sector: Optional[str] = None
+    founded_year: Optional[int] = None
 
-        # Store executives and board members
-        self.executives: List[Person] = []  # C-Suite executives
-        self.board_members: List[Person] = []  # Board of Directors
-        self.all_roles: List[Role] = []  # All roles at this company
 
-        # Cache for quick lookups
-        self._person_lookup: Dict[int, Person] = {}
+@dataclass
+class Person:
+    """Represents an executive or director."""
 
-    def add_person(self, person: Person, role: Role) -> None:
-        """Add a person to the company with their role"""
-        # Add role to company's role list
-        self.all_roles.append(role)
+    person_id: str  # slug-like ID (e.g., c_douglas_mcmillon)
+    full_name: str
+    current_title: str
+    is_executive: bool = False
+    is_director: bool = False
+    bio_short: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    photo_url: Optional[str] = None
+    years_experience: Optional[int] = None
+    education: Optional[str] = None
+    status: Optional[str] = None  # Active, Retired, etc.
 
-        # Add person to appropriate list based on position type
-        if role.position_type == "C-Suite":
-            if person not in self.executives:
-                self.executives.append(person)
-        elif role.position_type == "Board":
-            if person not in self.board_members:
-                self.board_members.append(person)
 
-        # Add to lookup cache
-        self._person_lookup[person.person_id] = person
+# ---------------------------------------------------------------------------
+# Compensation & Ownership Tables
+# ---------------------------------------------------------------------------
 
-    def get_person_by_id(self, person_id: int) -> Optional[Person]:
-        """Get a person by their ID"""
-        return self._person_lookup.get(person_id)
 
-    @property
-    def total_compensation_spending(self) -> float:
-        """Calculate total spending on executive compensation"""
-        return sum(role.total_compensation for role in self.all_roles)
+@dataclass
+class ExecutiveCompensation:
+    """Summary Compensation Table entry for a named executive officer."""
 
-    @property
-    def cap_space_remaining(self) -> float:
-        """Calculate remaining budget (cap space)"""
-        return self.exec_budget - self.total_compensation_spending
+    company_id: str
+    person_id: str
+    fiscal_year_end: date
+    salary_usd: float = 0.0
+    bonus_usd: float = 0.0
+    stock_awards_usd: float = 0.0
+    option_awards_usd: float = 0.0
+    non_equity_incentive_usd: float = 0.0
+    pension_change_usd: float = 0.0
+    all_other_comp_usd: float = 0.0
+    total_comp_usd: float = 0.0
+    source: str = ""
 
-    @property
-    def cap_utilization_percentage(self) -> float:
-        """Calculate percentage of budget used"""
-        if self.exec_budget == 0:
-            return 0
-        return (self.total_compensation_spending / self.exec_budget) * 100
 
-    @property
-    def is_over_budget(self) -> bool:
-        """Check if company is over budget"""
-        return self.total_compensation_spending > self.exec_budget
+@dataclass
+class ExecutiveEquityGrant:
+    """Plan-based award (RSU/PSU/Option) issued to an executive."""
 
-    @property
-    def executive_count(self) -> int:
-        """Count of C-Suite executives"""
-        return len(self.executives)
+    company_id: str
+    person_id: str
+    grant_date: date
+    award_type: str
+    threshold_units: Optional[int] = None
+    target_units: Optional[int] = None
+    max_units: Optional[int] = None
+    grant_date_fair_value_usd: Optional[float] = None
+    vesting_schedule_short: Optional[str] = None
+    source: str = ""
 
-    @property
-    def board_count(self) -> int:
-        """Count of board members"""
-        return len(self.board_members)
 
-    @property
-    def total_roster_size(self) -> int:
-        """Total count of all executives and board members"""
-        return self.executive_count + self.board_count
+@dataclass
+class BeneficialOwnershipRecord:
+    """Ownership disclosure from the proxy statement."""
 
-    def get_top_earners(self, limit: int = 5) -> List[tuple[Person, Role]]:
-        """Get top earning executives at this company"""
-        # Sort roles by compensation
-        sorted_roles = sorted(self.all_roles,
-                              key=lambda r: r.total_compensation,
-                              reverse=True)
+    company_id: str
+    person_id: str
+    role: str
+    total_shares: int
+    sole_voting_power: Optional[int] = None
+    shared_voting_power: Optional[int] = None
+    percent_of_class: Optional[float] = None
+    as_of_date: date = field(default_factory=date.today)
+    notes: Optional[str] = None
 
-        result = []
-        for role in sorted_roles[:limit]:
-            person = self.get_person_by_id(role.person_id)
-            if person:
-                result.append((person, role))
 
-        return result
+@dataclass
+class DirectorCompensation:
+    """Director compensation table entry."""
 
-    def get_cap_info(self) -> Dict:
-        """Get comprehensive cap space information"""
-        return {
-            'total_spent': self.total_compensation_spending,
-            'budget': self.exec_budget,
-            'remaining': self.cap_space_remaining,
-            'utilization_pct': self.cap_utilization_percentage,
-            'is_over_budget': self.is_over_budget,
-            'executive_count': self.executive_count,
-            'board_count': self.board_count
-        }
+    company_id: str
+    person_id: str
+    fiscal_year_end: date
+    fees_cash_usd: float = 0.0
+    stock_awards_usd: float = 0.0
+    all_other_comp_usd: float = 0.0
+    total_usd: float = 0.0
+    source: str = ""
 
-    def get_executives_by_position_type(self, position_type: str) -> List[Dict]:
-        """Get all people with specific position type with their compensation"""
-        result = []
-        for role in self.all_roles:
-            if role.position_type == position_type:
-                person = self.get_person_by_id(role.person_id)
-                if person:
-                    result.append({
-                        'person': person,
-                        'role': role,
-                        'cap_hit_pct': (role.total_compensation / self.exec_budget) * 100
-                    })
 
-        # Sort by total compensation
-        result.sort(key=lambda x: x['role'].total_compensation, reverse=True)
-        return result
+@dataclass
+class DirectorProfile:
+    """Director biography and governance metadata."""
 
-    def to_dict(self) -> Dict:
-        """Convert company to dictionary"""
-        return {
-            'company_id': self.company_id,
-            'name': self.name,
-            'ticker': self.ticker,
-            'sector': self.sector,
-            'market_cap': self.market_cap,
-            'revenue': self.revenue,
-            'exec_budget': self.exec_budget,
-            'founded': self.founded,
-            'cap_info': self.get_cap_info(),
-            'executive_count': self.executive_count,
-            'board_count': self.board_count
-        }
+    company_id: str
+    person_id: str
+    role: str
+    independent: bool
+    director_since: Optional[int] = None
+    lead_independent_director: bool = False
+    committees: Optional[str] = None
+    primary_occupation: Optional[str] = None
+    other_public_boards: Optional[str] = None
+
+
+@dataclass
+class DirectorCompPolicy:
+    """Board compensation policy components."""
+
+    company_id: str
+    component: str
+    amount_usd: Optional[float] = None
+    unit: Optional[str] = None  # USD, RSU, etc.
+    notes: Optional[str] = None
+
+
+@dataclass
+class SourceManifestEntry:
+    """Metadata about source files used to populate the dataset."""
+
+    company_id: str
+    file_path: str
+    description: str
+    last_updated: date
+
+
+# ---------------------------------------------------------------------------
+# Aggregate / Repository
+# ---------------------------------------------------------------------------
 
 
 class LeagueManager:
-    """Manages all companies and people in the league"""
+    """
+    Central repository for ExecuCap data. Stores normalized entities and provides
+    helper methods for querying across compensation, equity, and board tables.
+    """
 
     def __init__(self):
-        self.companies: Dict[int, Company] = {}
-        self.people: Dict[int, Person] = {}
-        self.all_roles: List[Role] = []
+        self.companies: Dict[str, Company] = {}
+        self.people: Dict[str, Person] = {}
+
+        # Compensation datasets
+        self.executive_comp: List[ExecutiveCompensation] = []
+        self.equity_grants: List[ExecutiveEquityGrant] = []
+        self.director_comp: List[DirectorCompensation] = []
+        self.beneficial_ownership: List[BeneficialOwnershipRecord] = []
+        self.director_profiles: List[DirectorProfile] = []
+        self.director_policies: List[DirectorCompPolicy] = []
+        self.source_manifest: List[SourceManifestEntry] = []
+
+        # Derived indexes for quick lookups
+        self._exec_comp_index: Dict[Tuple[str, str, date], ExecutiveCompensation] = {}
+
+    # ------------------------------------------------------------------
+    # Entity registration helpers
+    # ------------------------------------------------------------------
 
     def add_company(self, company: Company) -> None:
-        """Add a company to the league"""
         self.companies[company.company_id] = company
 
     def add_person(self, person: Person) -> None:
-        """Add a person to the league"""
         self.people[person.person_id] = person
 
-    def add_role(self, role: Role) -> None:
-        """Add a role and link it to person and company"""
-        self.all_roles.append(role)
+    def add_executive_comp(self, record: ExecutiveCompensation) -> None:
+        key = (record.company_id, record.person_id, record.fiscal_year_end)
+        existing = self._exec_comp_index.get(key)
+        if existing:
+            self.executive_comp = [
+                r
+                for r in self.executive_comp
+                if not (r.company_id == record.company_id and r.person_id == record.person_id and r.fiscal_year_end == record.fiscal_year_end)
+            ]
+        self._exec_comp_index[key] = record
+        self.executive_comp.append(record)
 
-        # Link to person
-        if role.person_id in self.people:
-            person = self.people[role.person_id]
-            person.add_role(role)
+    def add_equity_grant(self, record: ExecutiveEquityGrant) -> None:
+        self.equity_grants.append(record)
 
-            # Link to company
-            if role.company_id in self.companies:
-                company = self.companies[role.company_id]
-                company.add_person(person, role)
+    def add_beneficial_ownership(self, record: BeneficialOwnershipRecord) -> None:
+        self.beneficial_ownership.append(record)
 
-    def get_company(self, company_id: int) -> Optional[Company]:
-        """Get company by ID"""
+    def add_director_comp(self, record: DirectorCompensation) -> None:
+        self.director_comp.append(record)
+
+    def add_director_profile(self, profile: DirectorProfile) -> None:
+        self.director_profiles.append(profile)
+
+    def add_director_policy(self, policy: DirectorCompPolicy) -> None:
+        self.director_policies.append(policy)
+
+    def add_source_manifest_entry(self, entry: SourceManifestEntry) -> None:
+        self.source_manifest.append(entry)
+
+    # ------------------------------------------------------------------
+    # Query helpers used by the web layer
+    # ------------------------------------------------------------------
+
+    def get_company(self, company_id: str) -> Optional[Company]:
         return self.companies.get(company_id)
 
-    def get_person(self, person_id: int) -> Optional[Person]:
-        """Get person by ID"""
+    def get_person(self, person_id: str) -> Optional[Person]:
         return self.people.get(person_id)
 
-    def get_free_agents(self) -> List[Person]:
-        """Get all free agents (retired status)"""
-        return [p for p in self.people.values() if p.is_free_agent]
+    def get_compensation_for_person(
+        self,
+        person_id: str,
+        fiscal_year: Optional[date] = None,
+    ) -> List[ExecutiveCompensation]:
+        records = [r for r in self.executive_comp if r.person_id == person_id]
+        if fiscal_year:
+            records = [r for r in records if r.fiscal_year_end == fiscal_year]
+        return sorted(records, key=lambda r: r.fiscal_year_end, reverse=True)
 
-    def get_top_earners_league_wide(self, limit: int = 10) -> List[Dict]:
-        """Get top earners across all companies"""
-        earners = []
-        for role in self.all_roles:
-            if role.position_type == 'C-Suite':
-                person = self.people.get(role.person_id)
-                company = self.companies.get(role.company_id)
-                if person and company:
-                    earners.append({
-                        'person': person,
-                        'company': company,
-                        'role': role,
-                        'total_compensation': role.total_compensation
-                    })
+    def get_company_compensation(
+        self,
+        company_id: str,
+        fiscal_year: Optional[date] = None,
+    ) -> List[ExecutiveCompensation]:
+        records = [r for r in self.executive_comp if r.company_id == company_id]
+        if fiscal_year:
+            records = [r for r in records if r.fiscal_year_end == fiscal_year]
+        return sorted(records, key=lambda r: r.total_comp_usd, reverse=True)
 
-        # Sort by compensation
-        earners.sort(key=lambda x: x['total_compensation'], reverse=True)
-        return earners[:limit]
+    def get_top_earners(
+        self,
+        fiscal_year: Optional[date] = None,
+        limit: int = 10,
+    ) -> List[ExecutiveCompensation]:
+        records = self.executive_comp
+        if fiscal_year:
+            records = [r for r in records if r.fiscal_year_end == fiscal_year]
+        return sorted(records, key=lambda r: r.total_comp_usd, reverse=True)[:limit]
 
-    def get_league_standings(self) -> List[Company]:
-        """Get companies sorted by market cap (league standings)"""
-        return sorted(self.companies.values(),
-                      key=lambda c: c.market_cap,
-                      reverse=True)
+    def get_available_years(self) -> List[date]:
+        return sorted({record.fiscal_year_end for record in self.executive_comp}, reverse=True)
 
-    def get_companies_over_budget(self) -> List[Company]:
-        """Get all companies that are over budget"""
-        return [c for c in self.companies.values() if c.is_over_budget]
+    def get_director_profiles_for_company(self, company_id: str) -> List[DirectorProfile]:
+        return [profile for profile in self.director_profiles if profile.company_id == company_id]
 
-    def get_league_statistics(self) -> Dict:
-        """Get overall league statistics"""
-        total_spending = sum(c.total_compensation_spending
-                             for c in self.companies.values())
-        total_budget = sum(c.exec_budget for c in self.companies.values())
+    def get_top_earners_league_wide(
+        self,
+        limit: int = 10,
+        fiscal_year: Optional[date] = None,
+    ) -> List[Tuple[ExecutiveCompensation, Company, Person]]:
+        records = self.get_top_earners(fiscal_year=fiscal_year, limit=limit)
+        result: List[Tuple[ExecutiveCompensation, Company, Person]] = []
+        for record in records:
+            company = self.get_company(record.company_id)
+            person = self.get_person(record.person_id)
+            if company and person:
+                result.append((record, company, person))
+        return result
+
+    def get_company_cap_snapshot(
+        self,
+        company_id: str,
+        fiscal_year: Optional[date] = None,
+    ) -> Dict[str, float]:
+        company = self.get_company(company_id)
+        if not company:
+            return {}
+
+        compensation = self.get_company_compensation(company_id, fiscal_year)
+        total_spent = sum(record.total_comp_usd for record in compensation)
+        budget = company.cap_budget_usd or total_spent
+        remaining = (budget - total_spent) if budget is not None else 0.0
+        utilization = (total_spent / budget * 100) if budget else 100.0
 
         return {
-            'total_companies': len(self.companies),
-            'total_people': len(self.people),
-            'total_roles': len(self.all_roles),
-            'free_agents_count': len(self.get_free_agents()),
-            'companies_over_budget': len(self.get_companies_over_budget()),
-            'total_league_spending': total_spending,
-            'total_league_budget': total_budget,
-            'avg_cap_utilization': (total_spending / total_budget * 100)
-            if total_budget > 0 else 0
+            "total_spent": total_spent,
+            "budget": budget,
+            "remaining": remaining,
+            "utilization_pct": utilization,
         }
 
-
-# Helper function to create instances from existing data
-def create_from_loaded_data(companies_data: Dict, people_data: Dict,
-                            roles_data: List) -> LeagueManager:
-    """Create LeagueManager with all entities from loaded data"""
-    league = LeagueManager()
-
-    # Create all companies
-    for company_id, company_info in companies_data.items():
-        company = Company(
-            company_id=company_id,
-            name=company_info['name'],
-            ticker=company_info['ticker'],
-            sector=company_info['sector'],
-            market_cap=company_info['market_cap'],
-            revenue=company_info['revenue'],
-            exec_budget=company_info['exec_budget'],
-            founded=company_info['founded']
+    def get_league_standings(self) -> List[Company]:
+        return sorted(
+            self.companies.values(),
+            key=lambda company: company.market_cap_usd or 0,
+            reverse=True,
         )
-        league.add_company(company)
 
-    # Create all people
-    for person_id, person_info in people_data.items():
-        person = Person(
-            person_id=person_id,
-            name=person_info['name'],
-            age=person_info['age'],
-            experience=person_info['experience'],
-            education=person_info['education'],
-            status=person_info['status'],
-            previous_companies=person_info.get('previous_companies', [])
-        )
-        league.add_person(person)
+    def get_companies_over_budget(self, fiscal_year: Optional[date] = None) -> List[Company]:
+        over_budget = []
+        for company in self.companies.values():
+            cap = self.get_company_cap_snapshot(company.company_id, fiscal_year)
+            if cap and cap["budget"] and cap["remaining"] < 0:
+                over_budget.append(company)
+        return over_budget
 
-    # Create all roles and link them
-    for role_data in roles_data:
-        role = Role(
-            person_id=role_data['person_id'],
-            company_id=role_data['company_id'],
-            title=role_data['title'],
-            position_type=role_data['position_type'],
-            year=role_data['year'],
-            contract_years=role_data['contract_years'],
-            base_salary=role_data['base_salary'],
-            bonus=role_data.get('bonus', 0),
-            stock_awards=role_data.get('stock_awards', 0),
-            signing_bonus=role_data.get('signing_bonus', 0)
-        )
-        league.add_role(role)
+    def get_league_statistics(self, fiscal_year: Optional[date] = None) -> Dict[str, float]:
+        records = self.executive_comp
+        if fiscal_year:
+            records = [r for r in records if r.fiscal_year_end == fiscal_year]
 
-    return league
+        total_spent = sum(r.total_comp_usd for r in records)
+        budgets = [
+            self.get_company_cap_snapshot(r.company_id, fiscal_year)["budget"]
+            for r in records
+            if self.get_company_cap_snapshot(r.company_id, fiscal_year).get("budget")
+        ]
+        total_budget = sum(budgets) if budgets else 0.0
+        avg_utilization = (total_spent / total_budget * 100) if total_budget else 100.0
+
+        return {
+            "total_companies": len(self.companies),
+            "total_people": len(self.people),
+            "total_roles": len(self.executive_comp),
+            "free_agents_count": len(self.get_free_agents()),
+            "companies_over_budget": len(self.get_companies_over_budget(fiscal_year)),
+            "total_league_spending": total_spent,
+            "total_league_budget": total_budget,
+            "avg_cap_utilization": avg_utilization,
+        }
+
+    def get_free_agents(self) -> List[Person]:
+        return [
+            person
+            for person in self.people.values()
+            if (person.is_executive or person.is_director)
+            and (person.status or "").lower() == "retired"
+        ]
+
+
+__all__ = [
+    "Company",
+    "Person",
+    "ExecutiveCompensation",
+    "ExecutiveEquityGrant",
+    "BeneficialOwnershipRecord",
+    "DirectorCompensation",
+    "DirectorProfile",
+    "DirectorCompPolicy",
+    "SourceManifestEntry",
+    "LeagueManager",
+]
