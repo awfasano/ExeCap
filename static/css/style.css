@@ -274,6 +274,7 @@ table tbody tr:hover {
     border-radius: 20px;
     padding: 2rem;
     box-shadow: 0 28px 55px rgba(0, 0, 0, 0.5);
+    grid-column: 1 / -1;
 }
 
 .top-lists-grid {
@@ -303,13 +304,17 @@ table tbody tr:hover {
 }
 
 .top-list a {
-    color: var(--text);
-    text-decoration: none;
+    color: var(--highlight);
+    text-decoration: underline;
+    text-underline-offset: 0.25rem;
+    text-decoration-thickness: 1px;
     font-weight: 600;
+    transition: color 0.2s ease, text-decoration-color 0.2s ease;
 }
 
 .top-list a:hover {
-    color: var(--highlight);
+    color: var(--text);
+    text-decoration-color: var(--text);
 }
 
 .top-list-meta {

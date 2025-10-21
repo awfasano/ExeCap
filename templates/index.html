@@ -154,7 +154,7 @@
                     <ul class="top-list">
                         {% for owner in top_director_owners %}
                         <li>
-                            <span>{{ owner.person_name }}</span>
+                            <a href="{{ url_for('person_detail', person_id=owner.person_id) }}">{{ owner.person_name }}</a>
                             <span class="top-list-meta">{{ owner.company_ticker }} &#8226; {{ owner.company_name }}</span>
                             <span class="top-list-value">{{ "{:,.0f}".format(owner.total_shares) }} sh</span>
                         </li>
