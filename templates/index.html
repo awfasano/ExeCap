@@ -50,10 +50,18 @@
     <div class="home-grid">
         <section class="dashboard-card" style="grid-column: span 2;">
             <h2>Compensation Pulse</h2>
-            <p style="color: #94a3b8;">Compare executive and board spending across the league</p>
-            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; min-height: 320px;">
-                <canvas id="execSpendChart"></canvas>
-                <div style="display: grid; gap: 2rem;">
+            <p style="color: #94a3b8;">Benchmark spend, headcount, and insider pressure</p>
+            <div class="chart-tabs">
+                <button class="chart-tab active" data-chart="execPayroll">Exec Payroll</button>
+                <button class="chart-tab" data-chart="directorPayroll">Director Payroll</button>
+                <button class="chart-tab" data-chart="execHeadcount">Exec Headcount</button>
+                <button class="chart-tab" data-chart="ownershipDensity">Insider Shares</button>
+            </div>
+            <div class="chart-layout">
+                <div class="chart-shell">
+                    <canvas id="mainBarChart"></canvas>
+                </div>
+                <div class="chart-side">
                     <canvas id="spendBreakdownChart"></canvas>
                     <canvas id="ownershipChart"></canvas>
                 </div>
@@ -94,7 +102,7 @@
                                 {% if row.avg_experience %}
                                     {{ "{:.1f}".format(row.avg_experience) }} yrs
                                 {% else %}
-                                    —
+                                    n/a
                                 {% endif %}
                             </td>
                             <td>{{ row.executive_count }}</td>
@@ -108,23 +116,45 @@
             </div>
         </section>
 
-        <section class="quick-links">
-            <h2>Front Office Control Room</h2>
-            <div class="quick-links-grid">
-                <a class="quick-link-card" href="{{ url_for('company_list') }}">
-                    <span class="emoji">🏢</span>
-                    <div>
-                        <h3>Team Cap Tables</h3>
-                        <p>Drill into company rosters, contracts, and director policies.</p>
-                    </div>
-                </a>
-                <a class="quick-link-card" href="{{ url_for('free_agents') }}">
-                    <span class="emoji">🎯</span>
-                    <div>
-                        <h3>Free Agent Big Board</h3>
-                        <p>Scout executives ready for the next blockbuster hire.</p>
-                    </div>
-                </a>
+        <section class="top-lists">
+            <h2>Front Office Spotlight</h2>
+            <div class="top-lists-grid">
+                <div class="top-list-card">
+                    <h3>Highest Paid Executives</h3>
+                    <ul class="top-list">
+                        {% for exec in top_paid_execs %}
+                        <li>
+                            <a href="{{ url_for('person_detail', person_id=exec.person_id) }}">{{ exec.person_name }}</a>
+                            <span class="top-list-meta">{{ exec.company_ticker }} &#8226; {{ exec.title }}</span>
+                            <span class="top-list-value">${{ "{:,.0f}".format(exec.total_compensation) }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div class="top-list-card">
+                    <h3>Top Executive Shareholders</h3>
+                    <ul class="top-list">
+                        {% for owner in top_exec_owners %}
+                        <li>
+                            <a href="{{ url_for('person_detail', person_id=owner.person_id) }}">{{ owner.person_name }}</a>
+                            <span class="top-list-meta">{{ owner.company_ticker }} &#8226; {{ owner.company_name }}</span>
+                            <span class="top-list-value">{{ "{:,.0f}".format(owner.total_shares) }} sh</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div class="top-list-card">
+                    <h3>Top Director Shareholders</h3>
+                    <ul class="top-list">
+                        {% for owner in top_director_owners %}
+                        <li>
+                            <span>{{ owner.person_name }}</span>
+                            <span class="top-list-meta">{{ owner.company_ticker }} &#8226; {{ owner.company_name }}</span>
+                            <span class="top-list-value">{{ "{:,.0f}".format(owner.total_shares) }} sh</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
             </div>
         </section>
     </div>
@@ -134,48 +164,60 @@
         const execValues = {{ exec_chart_values|tojson }};
         const spendBreakdown = {{ spend_breakdown|tojson }};
         const ownershipBreakdown = {{ ownership_breakdown|tojson }};
+        const execDistribution = {{ exec_distribution|tojson }};
+        const directorSpendChart = {{ director_spend_chart|tojson }};
+        const ownershipDensity = {{ ownership_density|tojson }};
 
-        const execCtx = document.getElementById('execSpendChart');
+        const mainCtx = document.getElementById('mainBarChart');
         const spendCtx = document.getElementById('spendBreakdownChart');
         const ownershipCtx = document.getElementById('ownershipChart');
 
-        new Chart(execCtx, {
-            type: 'bar',
-            data: {
+        const formatCurrency = (value) => '$' + new Intl.NumberFormat().format(Math.round(value));
+        const formatNumber = (value) => new Intl.NumberFormat().format(Math.round(value));
+        const formatShares = (value) => formatNumber(value) + ' sh';
+
+        const chartConfigs = {
+            execPayroll: {
+                type: 'bar',
+                label: 'Executive Payroll (USD)',
                 labels: execLabels,
-                datasets: [{
-                    label: 'Executive Compensation (USD)',
-                    data: execValues,
-                    backgroundColor: 'rgba(59, 130, 246, 0.7)',
-                    borderColor: 'rgba(59, 130, 246, 1)',
-                    borderWidth: 2,
-                    borderRadius: 6,
-                    borderSkipped: false
-                }]
+                values: execValues,
+                background: 'rgba(244, 63, 94, 0.75)',
+                border: 'rgba(244, 63, 94, 1)',
+                tickFormatter: formatCurrency,
+                tooltipFormatter: formatCurrency
             },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: (ctx) => '$' + ctx.formattedValue.replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',')
-                        }
-                    }
-                },
-                scales: {
-                    x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148, 163, 184, 0.2)' } },
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            color: '#94a3b8',
-                            callback: (value) => '$' + new Intl.NumberFormat().format(value)
-                        },
-                        grid: { color: 'rgba(148, 163, 184, 0.15)' }
-                    }
-                }
+            directorPayroll: {
+                type: 'bar',
+                label: 'Director Payroll (USD)',
+                labels: directorSpendChart.labels,
+                values: directorSpendChart.values,
+                background: 'rgba(59, 130, 246, 0.75)',
+                border: 'rgba(59, 130, 246, 1)',
+                tickFormatter: formatCurrency,
+                tooltipFormatter: formatCurrency
+            },
+            execHeadcount: {
+                type: 'bar',
+                label: 'Executive Headcount',
+                labels: execDistribution.labels,
+                values: execDistribution.values,
+                background: 'rgba(56, 189, 248, 0.75)',
+                border: 'rgba(56, 189, 248, 1)',
+                tickFormatter: formatNumber,
+                tooltipFormatter: (value) => formatNumber(value) + ' execs'
+            },
+            ownershipDensity: {
+                type: 'bar',
+                label: 'Insider Shares (Directors + Execs)',
+                labels: ownershipDensity.labels,
+                values: ownershipDensity.values,
+                background: 'rgba(250, 204, 21, 0.75)',
+                border: 'rgba(250, 204, 21, 1)',
+                tickFormatter: formatShares,
+                tooltipFormatter: formatShares
             }
-        });
+        };
 
         const doughnutOpts = {
             responsive: true,
@@ -186,7 +228,7 @@
                 },
                 tooltip: {
                     callbacks: {
-                        label: (ctx) => ctx.label + ': ' + new Intl.NumberFormat().format(ctx.parsed)
+                        label: (ctx) => ctx.label + ': ' + formatNumber(ctx.parsed)
                     }
                 }
             }
@@ -198,8 +240,8 @@
                 labels: spendBreakdown.labels,
                 datasets: [{
                     data: spendBreakdown.values,
-                    backgroundColor: ['rgba(16, 185, 129, 0.8)', 'rgba(59, 130, 246, 0.8)'],
-                    borderColor: ['rgba(16, 185, 129, 1)', 'rgba(59, 130, 246, 1)'],
+                    backgroundColor: ['rgba(244, 63, 94, 0.75)', 'rgba(59, 130, 246, 0.75)'],
+                    borderColor: ['rgba(244, 63, 94, 1)', 'rgba(59, 130, 246, 1)'],
                     borderWidth: 1
                 }]
             },
@@ -212,12 +254,74 @@
                 labels: ownershipBreakdown.labels,
                 datasets: [{
                     data: ownershipBreakdown.values,
-                    backgroundColor: ['rgba(245, 158, 11, 0.8)', 'rgba(15, 118, 110, 0.8)'],
-                    borderColor: ['rgba(245, 158, 11, 1)', 'rgba(15, 118, 110, 1)'],
+                    backgroundColor: ['rgba(251, 146, 60, 0.78)', 'rgba(14, 165, 233, 0.75)'],
+                    borderColor: ['rgba(251, 146, 60, 1)', 'rgba(14, 165, 233, 1)'],
                     borderWidth: 1
                 }]
             },
             options: doughnutOpts
+        });
+
+        const getBarOptions = (config) => ({
+            responsive: true,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => config.tooltipFormatter(ctx.parsed.y ?? ctx.parsed)
+                    }
+                }
+            },
+            scales: {
+                x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148, 163, 184, 0.2)' } },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#94a3b8',
+                        callback: (value) => config.tickFormatter(value)
+                    },
+                    grid: { color: 'rgba(148, 163, 184, 0.15)' }
+                }
+            }
+        });
+
+        let activeConfig = chartConfigs.execPayroll;
+        const mainChart = new Chart(mainCtx, {
+            type: activeConfig.type,
+            data: {
+                labels: activeConfig.labels,
+                datasets: [{
+                    label: activeConfig.label,
+                    data: activeConfig.values,
+                    backgroundColor: activeConfig.background,
+                    borderColor: activeConfig.border,
+                    borderWidth: 2,
+                    borderRadius: 6,
+                    borderSkipped: false
+                }]
+            },
+            options: getBarOptions(activeConfig)
+        });
+
+        const updateMainChart = (key) => {
+            const config = chartConfigs[key];
+            activeConfig = config;
+            mainChart.config.type = config.type;
+            mainChart.data.labels = config.labels;
+            mainChart.data.datasets[0].label = config.label;
+            mainChart.data.datasets[0].data = config.values;
+            mainChart.data.datasets[0].backgroundColor = config.background;
+            mainChart.data.datasets[0].borderColor = config.border;
+            mainChart.options = getBarOptions(config);
+            mainChart.update();
+        };
+
+        document.querySelectorAll('.chart-tab').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.chart-tab').forEach((b) => b.classList.remove('active'));
+                btn.classList.add('active');
+                updateMainChart(btn.dataset.chart);
+            });
         });
     </script>
 {% endblock %}
