@@ -117,10 +117,13 @@ def parse_year_to_date(year_str: Optional[str]) -> Optional[date]:
 
 
 def company_to_template_dict(company) -> Dict:
+    name = company.company_name or company.company_id.replace('_', ' ').title()
+    ticker = company.ticker or company.company_id[:4].upper()
     return {
         'company_id': company.company_id,
-        'name': company.company_name,
-        'ticker': company.ticker,
+        'name': name,
+        'ticker': ticker,
+        'ticker_display': (ticker[:2] if ticker else ''),
         'sector': company.sector or 'N/A',
         'market_cap': company.market_cap_usd or 0,
         'revenue': company.revenue_usd or 0,
