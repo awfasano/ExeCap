@@ -15,6 +15,7 @@ from models import (
     BeneficialOwnershipRecord,
     Company,
     DirectorCompensation,
+    DirectorCompPolicy,
     DirectorProfile,
     ExecutiveCompensation,
     ExecutiveEquityGrant,
@@ -104,7 +105,7 @@ def _get_float(row: Dict[str, str], *keys: str, default: float = 0.0) -> float:
     return default
 
 
-def _get_int(row: Dict[str, str], *keys: str, default: int = 0) -> int:
+def _get_int(row: Dict[str, str], *keys: str, default: Optional[int] = 0) -> Optional[int]:
     for key in keys:
         if key in row and row[key] not in (None, ""):
             return _to_int(row[key])
@@ -277,14 +278,15 @@ class CompanyFolderLoader:
         for row in rows:
             entry = SourceManifestEntry(
                 company_id=company_slug,
-                file_path=row.get("file_path", ""),
-                description=row.get("description", ""),
+                file_path=row.get("file_path") or row.get("file") or "",
+                description=row.get("description") or row.get("what") or "",
                 last_updated=_parse_date(row.get("last_updated"), fallback=date.today()) or date.today(),
             )
             self.league_manager.add_source_manifest_entry(entry)
         manifest.setdefault("company_name", manifest.get("name"))
         manifest.setdefault("ticker", manifest.get("symbol"))
         manifest.setdefault("fiscal_year_end", manifest.get("year_end"))
+        manifest.setdefault("source_url", manifest.get("source_url"))
         return manifest
 
     def _import_executive_compensation(
@@ -312,6 +314,15 @@ class CompanyFolderLoader:
             )
             fiscal_year = _parse_date(row.get("fiscal_year_end"), fallback=date(int(year), 12, 31))
 
+            if row.get("company_name"):
+                company.company_name = row["company_name"]
+            if row.get("ticker"):
+                company.ticker = row["ticker"]
+            if row.get("source_url"):
+                company.source_url = row["source_url"]
+            fiscal_year_row = _parse_date(row.get("fiscal_year_end"))
+            if fiscal_year_row:
+                company.fiscal_year_end = fiscal_year_row
             salary_usd = _get_float(row, "salary_usd", "base_salary_usd", "base_salary", "salary")
             bonus_usd = _get_float(row, "bonus_usd", "cash_bonus_usd", "bonus", "cash_bonus")
             stock_awards_usd = _get_float(row, "stock_awards_usd", "stock_awards_fair_value_usd", "stock_awards", "stock_awards_value")
@@ -356,19 +367,24 @@ class CompanyFolderLoader:
             person = self._ensure_person(
                 row.get("person_id"),
                 full_name,
-                current_title=row.get("current_title", row.get("title", "")),
+                current_title=_get_first(row, ["current_title", "title"], default=""),
                 is_executive=True,
             )
             grant_date = _parse_date(row.get("grant_date"))
+            threshold_units = _get_int(row, "threshold_units")
+            target_units = _get_int(row, "target_units", "rsu_units")
+            max_units = _get_int(row, "max_units")
+            if row.get("award_type", "").upper() == "RSU" and target_units == 0:
+                target_units = _get_int(row, "rsu_units")
             record = ExecutiveEquityGrant(
                 company_id=company.company_id,
                 person_id=person.person_id,
                 grant_date=grant_date or company.fiscal_year_end,
                 award_type=row.get("type", row.get("award_type", "")),
-                threshold_units=_to_int(row.get("threshold_units")),
-                target_units=_to_int(row.get("target_units")),
-                max_units=_to_int(row.get("max_units")),
-                grant_date_fair_value_usd=_to_float(row.get("grant_date_fair_value_usd")),
+                threshold_units=threshold_units,
+                target_units=target_units,
+                max_units=max_units,
+                grant_date_fair_value_usd=_get_float(row, "grant_date_fair_value_usd", "grant_date_value_usd"),
                 vesting_schedule_short=row.get("vesting_schedule_short", row.get("vesting_schedule")),
                 source=row.get("source", f"{company.fiscal_year_end.year} Plan-Based Awards"),
             )
@@ -391,9 +407,9 @@ class CompanyFolderLoader:
                 company_id=company.company_id,
                 person_id=person.person_id,
                 role=_get_first(row, ["role", "title"], default=person.current_title),
-                total_shares=_get_int(row, "total_shares", "total_shares_owned"),
-                sole_voting_power=_get_int(row, "sole_voting_power", "direct_or_indirect_sole_voting"),
-                shared_voting_power=_get_int(row, "shared_voting_power", "indirect_shared_voting"),
+                total_shares=_get_int(row, "total_shares", "total_shares_owned", "total_beneficial_ownership"),
+                sole_voting_power=_get_int(row, "sole_voting_power", "direct_or_indirect_sole_voting", "ownership_of_common_stock"),
+                shared_voting_power=_get_int(row, "shared_voting_power", "indirect_shared_voting", "equity_awards_exercisable_or_vesting_within_60d"),
                 percent_of_class=_get_float(row, "percent_of_class", "percent_class"),
                 as_of_date=_parse_date(row.get("as_of_date"), fallback=company.fiscal_year_end) or company.fiscal_year_end,
                 notes=row.get("notes"),
@@ -424,7 +440,6 @@ class CompanyFolderLoader:
                 source=row.get("source", f"{company.fiscal_year_end.year} Director Compensation"),
             )
             self.league_manager.add_director_comp(record)
-
     def _import_director_profiles(self, company: Company, blob_name: str) -> None:
         rows = self._read_csv_blob(blob_name)
         for row in rows:
@@ -442,7 +457,7 @@ class CompanyFolderLoader:
                 person_id=person.person_id,
                 role=_get_first(row, ["role", "title"], default=person.current_title),
                 independent=_to_bool(row.get("independent", row.get("is_independent", True))),
-                director_since=_get_int(row, "director_since", default=None) or None,
+                director_since=_get_int(row, "director_since", default=None),
                 lead_independent_director=_to_bool(row.get("lead_independent_director", row.get("lead_independent", False))),
                 committees=row.get("committees"),
                 primary_occupation=row.get("primary_occupation", row.get("occupation")),
@@ -450,7 +465,22 @@ class CompanyFolderLoader:
             )
             self.league_manager.add_director_profile(profile)
 
-    # ------------------------------------------------------------------
+    def _import_director_policy_file(self, company: Company, blob_name: str) -> None:
+        rows = self._read_csv_blob(blob_name)
+        for row in rows:
+            component = _get_first(row, ["component", "policy_item"], default="")
+            if not component:
+                continue
+            policy = DirectorCompPolicy(
+                company_id=company.company_id,
+                component=component,
+                amount_usd=_get_float(row, "amount_usd", "value_usd"),
+                unit=row.get("unit"),
+                notes=row.get("notes"),
+            )
+            self.league_manager.add_director_policy(policy)
+
+# ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -495,6 +525,9 @@ class CompanyFolderLoader:
                 recognized_files += 1
             elif "director_compensation" in filename:
                 self._import_director_compensation(company, blob.name)
+                recognized_files += 1
+            elif "director_comp_policy" in filename or "director_compensation_policy" in filename:
+                self._import_director_policy_file(company, blob.name)
                 recognized_files += 1
             elif "directors_profiles" in filename or "director_profiles" in filename:
                 self._import_director_profiles(company, blob.name)
