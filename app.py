@@ -638,9 +638,15 @@ def person_detail(person_id):
         year = available_years[0]
     year_date = parse_year_to_date(year)
 
-    compensation_records = league_manager.get_compensation_for_person(person_id, year_date)
-    if not year_date:
-        compensation_records = league_manager.get_compensation_for_person(person_id)
+    all_records = league_manager.get_compensation_for_person(person_id)
+    compensation_records = (
+        league_manager.get_compensation_for_person(person_id, year_date)
+        if year_date else all_records
+    )
+    # Fallback to career view when no data exists for the requested season
+    if year_date and not compensation_records:
+        compensation_records = all_records
+        year_date = None
 
     person_roles = []
     for record in compensation_records:
@@ -663,11 +669,9 @@ def person_detail(person_id):
 
     person_roles.sort(key=lambda item: item['year'], reverse=True)
 
-    all_records = league_manager.get_compensation_for_person(person_id)
-    record_set = compensation_records if year_date else all_records
-    total_earnings = sum(rec.total_comp_usd for rec in record_set)
-    years_active = len({rec.fiscal_year_end.year for rec in record_set})
-    companies_count = len({rec.company_id for rec in record_set})
+    total_earnings = sum(rec.total_comp_usd for rec in all_records)
+    years_active = len({rec.fiscal_year_end.year for rec in all_records})
+    companies_count = len({rec.company_id for rec in all_records})
     highest_single_year = max((rec.total_comp_usd for rec in all_records), default=0)
     avg_annual = (total_earnings / years_active) if years_active else 0
 
@@ -700,7 +704,7 @@ def person_detail(person_id):
         person=person_dict,
         roles=person_roles,
         career_stats=career_stats,
-        selected_year=year,
+        selected_year=year if year_date else 'career',
         available_years=person_years,
     )
 
