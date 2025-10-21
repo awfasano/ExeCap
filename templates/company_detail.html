@@ -87,7 +87,7 @@
                 <li><span>Avg Total Comp</span><strong>${{ "{:,.0f}".format(director_comp_summary.avg_total) }}</strong></li>
             </ul>
             {% else %}
-            <p style="color:#94a3b8;">Director compensation data not available for this season.</p>
+            <p class="muted-text">Director compensation data not available for this season.</p>
             {% endif %}
         </div>
 
@@ -240,12 +240,12 @@
                     </td>
                     <td>{{ exec.title }}</td>
                     <td>
-                        <small style="color: #94a3b8;">
+                        <small class="muted-small">
                             {{ exec.age or 'n/a' }}y &#8226; {{ exec.experience or 'n/a' }}y exp
                         </small>
                     </td>
                     <td>
-                        <small style="color: #94a3b8;">
+                        <small class="muted-small">
                             {{ exec.contract_years }} years
                         </small>
                     </td>
@@ -297,12 +297,12 @@
                     </td>
                     <td>{{ member.title }}</td>
                     <td>
-                        <small style="color: #94a3b8;">
+                        <small class="muted-small">
                             {{ member.age or 'n/a' }}y &#8226; {{ member.experience or 'n/a' }}y exp
                         </small>
                     </td>
                     <td>
-                        <small style="color: #94a3b8;">
+                        <small class="muted-small">
                             {{ member.contract_years }} years
                         </small>
                     </td>
@@ -319,7 +319,7 @@
 
     {% if director_comp_summary %}
     <div class="team-card" style="margin-top: 2rem;">
-        <h3 style="color: #f59e0b; margin-top: 0;">&#127974; Board Compensation Snapshot</h3>
+        <h3 class="warning-title" style="margin-top: 0;">&#127974; Board Compensation Snapshot</h3>
         <div class="cap-stats">
             <div class="stat-item">
                 <div class="stat-label">Directors Covered</div>
@@ -343,7 +343,7 @@
 
     {% if director_policies %}
     <div class="team-card" style="margin-top: 2rem;">
-        <h3 style="color: #38bdf8; margin-top: 0;">&#128466; Director Compensation Policy</h3>
+        <h3 class="accent-title" style="margin-top: 0;">&#128466; Director Compensation Policy</h3>
         <ul style="margin: 0; padding-left: 1.2rem; color: #cbd5f5;">
             {% for policy in director_policies %}
             <li style="margin-bottom: 0.5rem;">
@@ -352,7 +352,7 @@
                     n/a ${{ "{:,.0f}".format(policy.amount_usd) }} {{ policy.unit or '' }}
                 {% endif %}
                 {% if policy.notes %}
-                    <br><small style="color: #94a3b8;">{{ policy.notes }}</small>
+                    <br><small class="muted-small">{{ policy.notes }}</small>
                 {% endif %}
             </li>
             {% endfor %}

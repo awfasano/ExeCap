@@ -12,15 +12,14 @@
 </head>
 <body>
     <nav>
-        <a href="{{ url_for('index') }}" class="nav-brand">ExecuCap 💰</a>
-        <a href="{{ url_for('company_list') }}">🏢 Team Salary Caps</a>
-        <a href="{{ url_for('free_agents') }}">🎯 Free Agents</a>
-        
-        <!-- Future features -->
-        <div style="margin-left: auto; display: flex; gap: 1rem;">
-            <span style="color: #64748b; font-size: 0.9rem; padding: 0.5rem;">
-                Season: 2024
-            </span>
+        <a href="{{ url_for('index') }}" class="nav-brand">
+            <img src="{{ url_for('static', filename='execap_logo.jpg') }}" alt="ExecCap logo" class="brand-logo">
+            <span>ExecuCap</span>
+        </a>
+        <a href="{{ url_for('company_list') }}">Teams</a>
+        <a href="{{ url_for('free_agents') }}">Free Agents</a>
+        <div class="nav-meta">
+            <span class="nav-season">Season: 2024</span>
         </div>
     </nav>
     <main>

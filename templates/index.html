@@ -50,7 +50,7 @@
     <div class="home-grid">
         <section class="dashboard-card" style="grid-column: span 2;">
             <h2>Compensation Pulse</h2>
-            <p style="color: #94a3b8;">Benchmark spend, headcount, and insider pressure</p>
+            <p class="muted-text">Benchmark spend, headcount, and insider pressure</p>
             <div class="chart-tabs">
                 <button class="chart-tab active" data-chart="execPayroll">Exec Payroll</button>
                 <button class="chart-tab" data-chart="directorPayroll">Director Payroll</button>
@@ -70,7 +70,7 @@
 
         <section class="dashboard-card" style="grid-column: span 2;">
             <h2>Company Salary Cap Table</h2>
-            <p style="color: #94a3b8;">Sorted by executive compensation for {{ selected_year }}</p>
+            <p class="muted-text">Sorted by executive compensation for {{ selected_year }}</p>
             <div style="overflow-x: auto;">
                 <table>
                     <thead>
@@ -93,7 +93,7 @@
                             <td>
                                 <a href="{{ url_for('company_detail', company_id=row.company.company_id) }}">
                                     <strong>{{ row.company.name }}</strong><br>
-                                    <small style="color: #94a3b8;">{{ row.company.ticker }}</small>
+                                    <small class="muted-small">{{ row.company.ticker }}</small>
                                 </a>
                             </td>
                             <td class="salary-amount">${{ "{:,.0f}".format(row.executive_total) }}</td>
