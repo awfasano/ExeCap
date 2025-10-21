@@ -24,7 +24,8 @@ The app defaults to the bundled `fortune10_exec_data.py` dataset, so you can exp
 
 - Core entities (`Company`, `Person`) live in `models.py` alongside normalized fact tables (`ExecutiveCompensation`, `ExecutiveEquityGrant`, `BeneficialOwnershipRecord`, `DirectorCompensation`, `DirectorProfile`, `DirectorCompPolicy`, and `SourceManifestEntry`). Everything is wired through a refreshed `LeagueManager` that keeps derived indexes for UI queries.
 - `fortune10_exec_data.py` captures Fortune 10 compensation totals. `fortune10_loader.py` converts those records into the normalized models while layering in market-cap snapshots and cap-budget estimates.
-- `DATA_SOURCE=fortune10` (default) loads the in-repo dataset. Set `DATA_SOURCE=gcs` to read CSVs from `gs://<bucket>/companies/<slug>/<year>/` (e.g., `walmart_2024_executive_compensation.csv`, `..._director_compensation.csv`, etc.).
+- `DATA_SOURCE=gcs` (default) reads CSVs from `gs://<bucket>/companies/<slug>/<year>/` (e.g., `walmart_2024_executive_compensation.csv`, `..._director_compensation.csv`, etc.). Set `DATA_SOURCE=fortune10` if you want the bundled sample instead.
+- `ALLOW_SAMPLE_FALLBACK=true` lets the server fall back to the bundled Fortune 10 dataset when GCS loads fail; leave it unset/false to keep the dataset empty on errors so you catch issues early.
 
 ## Deployment Tips
 

@@ -16,7 +16,8 @@ app = Flask(__name__)
 BUCKET_NAME = "execap"  # Your GCS bucket name
 CREDENTIALS_PATH = None  # Use None for default credentials (uses Application Default Credentials)
 DEFAULT_YEAR = "2024"  # Default year to load
-DATA_SOURCE = os.getenv('DATA_SOURCE', 'fortune10').lower()  # 'fortune10' or 'gcs'
+DATA_SOURCE = os.getenv('DATA_SOURCE', 'gcs').lower()  # 'fortune10' or 'gcs'
+ALLOW_SAMPLE_FALLBACK = os.getenv('ALLOW_SAMPLE_FALLBACK', 'false').lower() == 'true'
 
 # Role archetypes for position leader board
 ROLE_CATEGORY_RULES = [
@@ -144,7 +145,7 @@ else:
             load_all_years=False  # Set to True if you want to load all years at once
         )
 
-        if load_result['status'] == 'success' and load_result.get('companies_count'):
+        if load_result['status'] == 'success':
             print(f"Successfully loaded data for companies: {load_result['companies_loaded']}")
             print(
                 f"Total: {load_result['companies_count']} companies, {load_result['people_count']} people, {load_result['executive_comp_count']} compensation rows")
@@ -152,21 +153,40 @@ else:
                 print("Warnings during load:")
                 for warning in load_result['warnings']:
                     print(f" - {warning}")
+            if not load_result.get('companies_count'):
+                print("No companies were loaded. Verify that CSV files are present in the bucket.")
 
-            # Get the league manager directly from the loader
             league_manager = folder_loader.get_league_manager()
             FALLBACK_AVAILABLE_YEARS.clear()
             USING_SAMPLE_DATA = False
         else:
-            print(f"Error loading data: {load_result.get('message', 'Unknown error')}")
-            league_manager = load_fortune10_sample_dataset()
+            message = load_result.get('message', 'Unknown error')
+            print(f"Error loading data: {message}")
+            if load_result.get('warnings'):
+                print("Warnings during failed load:")
+                for warning in load_result['warnings']:
+                    print(f" - {warning}")
+            if ALLOW_SAMPLE_FALLBACK:
+                print("ALLOW_SAMPLE_FALLBACK is true; loading bundled Fortune 10 dataset.")
+                league_manager = load_fortune10_sample_dataset()
+            else:
+                print("Sample fallback disabled. Continuing with empty dataset.")
+                league_manager = LeagueManager()
+                FALLBACK_AVAILABLE_YEARS.clear()
+                USING_SAMPLE_DATA = False
     except Exception as e:
         print(f"Failed to load initial data: {str(e)}")
         print("Starting with empty data. You may need to:")
         print("1. Check your GCS bucket permissions")
         print("2. Verify the bucket name is 'execap'")
         print("3. Upload Excel files in the correct structure")
-        league_manager = load_fortune10_sample_dataset()
+        if ALLOW_SAMPLE_FALLBACK:
+            print("ALLOW_SAMPLE_FALLBACK is true; loading bundled Fortune 10 dataset.")
+            league_manager = load_fortune10_sample_dataset()
+        else:
+            league_manager = LeagueManager()
+            FALLBACK_AVAILABLE_YEARS.clear()
+            USING_SAMPLE_DATA = False
 
 
 @app.route('/')
@@ -603,8 +623,13 @@ def refresh_data():
             message += "\nWarnings:\n" + "\n".join(f" - {warning}" for warning in load_result['warnings'])
         return message
     else:
-        league_manager = load_fortune10_sample_dataset()
-        return f"Error refreshing data: {load_result.get('message')}. Loaded bundled Fortune 10 sample data instead."
+        message = f"Error refreshing data: {load_result.get('message')}"
+        if load_result.get('warnings'):
+            message += "\nWarnings:\n" + "\n".join(f" - {warning}" for warning in load_result['warnings'])
+        if ALLOW_SAMPLE_FALLBACK:
+            league_manager = load_fortune10_sample_dataset()
+            return message + "\nLoaded bundled Fortune 10 sample data instead."
+        return message + "\nExisting data remains unchanged."
 
 
 @app.route('/api/company-folders')
