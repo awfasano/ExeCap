@@ -214,17 +214,12 @@ def index():
             record for record in league_manager.director_comp
             if record.company_id == company.company_id and (not year_date or record.fiscal_year_end == year_date)
         ]
-        all_ownership_records = [
+        ownership_records = [
             record for record in league_manager.beneficial_ownership
             if record.company_id == company.company_id
         ]
-        ownership_filtered = [
-            record for record in all_ownership_records
-            if (not year_date or (record.as_of_date and record.as_of_date.year == year_date.year))
-        ]
-        ownership_records = ownership_filtered if ownership_filtered else all_ownership_records
 
-        if year and not exec_records and not director_records:
+        if year and not exec_records and not director_records and not ownership_records:
             continue
 
         exec_total = sum(record.total_comp_usd for record in exec_records)
@@ -552,15 +547,10 @@ def company_detail(company_id):
     director_count = len({record.person_id for record in director_comp_records})
     director_avg_total = (director_total / director_count) if director_count else 0
 
-    raw_ownership_records_all = [
+    raw_ownership_records = [
         record for record in league_manager.beneficial_ownership
         if record.company_id == company_id
     ]
-    raw_ownership_records_filtered = [
-        record for record in raw_ownership_records_all
-        if (not year_date or (record.as_of_date and record.as_of_date.year == year_date.year))
-    ]
-    raw_ownership_records = raw_ownership_records_filtered if raw_ownership_records_filtered else raw_ownership_records_all
     ownership_rows = []
     exec_person_ids = {item['person_id'] for item in c_suite}
     director_shares = 0
