@@ -10,7 +10,7 @@
             </div>
             <div class="team-heading">
                 <h1>{{ company.name }}</h1>
-                <p class="team-subline">{{ company.ticker }} • {{ company.sector }} • Founded {{ company.founded }}</p>
+            <p class="team-subline">{{ company.ticker }} &#8226; {{ company.sector }} &#8226; Founded {{ company.founded }}</p>
                 <div class="team-tags">
                     <span class="team-tag">Fiscal Year End {{ company.fiscal_year_end.strftime('%Y-%m-%d') }}</span>
                     {% if company.source_url %}
@@ -51,7 +51,7 @@
     <section class="team-grid">
         <div class="team-card large">
             <header class="team-card-header">
-                <span class="icon">🧮</span>
+                <span class="icon">&#129462;</span>
                 <div>
                     <h3>Executive Ledger</h3>
                     <p>Compensation outlay for named executive officers</p>
@@ -64,16 +64,16 @@
                     {% if company_summary.exec_avg_experience %}
                         {{ "{:.1f}".format(company_summary.exec_avg_experience) }} yrs
                     {% else %}
-                        —
+                        n/a
                     {% endif %}
                 </strong></li>
-                <li><span>Exec Count</span><strong>{{ company_summary.exec_count }}</strong></li>
+            <li><span>Exec Count</span><strong>{{ company_summary.exec_count }}</strong></li>
             </ul>
         </div>
 
         <div class="team-card">
             <header class="team-card-header">
-                <span class="icon">🏛️</span>
+                <span class="icon">&#127974;</span>
                 <div>
                     <h3>Board Stipend</h3>
                     <p>Non-employee director compensation</p>
@@ -93,7 +93,7 @@
 
         <div class="team-card">
             <header class="team-card-header">
-                <span class="icon">🧬</span>
+                <span class="icon">&#129516;</span>
                 <div>
                     <h3>Ownership Stack</h3>
                     <p>Beneficial holdings disclosed in the proxy</p>
@@ -109,7 +109,7 @@
 
         <div class="team-card">
             <header class="team-card-header">
-                <span class="icon">📊</span>
+                <span class="icon">&#128200;</span>
                 <div>
                     <h3>Market Signals</h3>
                     <p>Financial context & cap pressure</p>
@@ -121,7 +121,7 @@
                         {% if company.market_cap %}
                             ${{ "{:,.1f}".format(company.market_cap / 1_000_000_000) }}B
                         {% else %}
-                            —
+                            n/a
                         {% endif %}
                     </strong>
                 </li>
@@ -130,7 +130,7 @@
                         {% if company.revenue %}
                             ${{ "{:,.1f}".format(company.revenue / 1_000_000_000) }}B
                         {% else %}
-                            —
+                            n/a
                         {% endif %}
                     </strong>
                 </li>
@@ -139,7 +139,7 @@
                         {% if cap_info.exec_percent_revenue %}
                             {{ "{:.2f}".format(cap_info.exec_percent_revenue) }}%
                         {% else %}
-                            —
+                            n/a
                         {% endif %}
                     </strong>
                 </li>
@@ -151,7 +151,7 @@
     {% if ownership_rows %}
     <section class="team-card full">
         <header class="team-card-header">
-            <span class="icon">🧾</span>
+            <span class="icon">&#128462;</span>
             <div>
                 <h3>Beneficial Ownership Ledger</h3>
                 <p>Directors and executives with disclosed holdings</p>
@@ -165,7 +165,7 @@
                         <th>Role</th>
                         <th>Total Shares</th>
                         <th>Sole Voting</th>
-                        <th>Shared / 60d</th>
+                        <th>Shared / 60 days</th>
                         <th>% of Class</th>
                         <th>As of</th>
                         <th>Notes</th>
@@ -183,11 +183,11 @@
                             {% if record.percent_of_class %}
                                 {{ "{:.3f}".format(record.percent_of_class) }}%
                             {% else %}
-                                —
+                                n/a
                             {% endif %}
                         </td>
-                        <td>{{ {{ record.as_of_date }} }}</td>
-                        <td>{{ record.notes or '—' }}</td>
+                        <td>{{ record.as_of_date }}</td>
+                        <td>{{ record.notes or 'n/a' }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -198,7 +198,7 @@
 
     <section class="team-card full chart-card">
         <header class="team-card-header">
-            <span class="icon">📈</span>
+            <span class="icon">&#128200;</span>
             <div>
                 <h3>Executive Compensation Breakdown</h3>
                 <p>Total compensation by named executive officer</p>
@@ -213,7 +213,7 @@
     {% if c_suite %}
     <div class="roster-section">
         <div class="position-header">
-            🎯 C-Suite Executives ({{ c_suite|length }})
+            &#127919; C-Suite Executives ({{ c_suite|length }})
         </div>
         <table>
             <thead>
@@ -241,7 +241,7 @@
                     <td>{{ exec.title }}</td>
                     <td>
                         <small style="color: #94a3b8;">
-                            {{ exec.age or '—' }}y • {{ exec.experience or '—' }}y exp
+                            {{ exec.age or 'n/a' }}y &#8226; {{ exec.experience or 'n/a' }}y exp
                         </small>
                     </td>
                     <td>
@@ -272,7 +272,7 @@
     {% if board_members %}
     <div class="roster-section">
         <div class="position-header" style="background: linear-gradient(90deg, #3b82f6, #1d4ed8);">
-            🏛️ Board of Directors ({{ board_members|length }})
+            &#127974; Board of Directors ({{ board_members|length }})
         </div>
         <table>
             <thead>
@@ -298,7 +298,7 @@
                     <td>{{ member.title }}</td>
                     <td>
                         <small style="color: #94a3b8;">
-                            {{ member.age or '—' }}y • {{ member.experience or '—' }}y exp
+                            {{ member.age or 'n/a' }}y &#8226; {{ member.experience or 'n/a' }}y exp
                         </small>
                     </td>
                     <td>
@@ -319,7 +319,7 @@
 
     {% if director_comp_summary %}
     <div class="team-card" style="margin-top: 2rem;">
-        <h3 style="color: #f59e0b; margin-top: 0;">🏛️ Board Compensation Snapshot</h3>
+        <h3 style="color: #f59e0b; margin-top: 0;">&#127974; Board Compensation Snapshot</h3>
         <div class="cap-stats">
             <div class="stat-item">
                 <div class="stat-label">Directors Covered</div>
@@ -343,13 +343,13 @@
 
     {% if director_policies %}
     <div class="team-card" style="margin-top: 2rem;">
-        <h3 style="color: #38bdf8; margin-top: 0;">📝 Director Compensation Policy</h3>
+        <h3 style="color: #38bdf8; margin-top: 0;">&#128466; Director Compensation Policy</h3>
         <ul style="margin: 0; padding-left: 1.2rem; color: #cbd5f5;">
             {% for policy in director_policies %}
             <li style="margin-bottom: 0.5rem;">
                 <strong>{{ policy.component }}</strong>
                 {% if policy.amount_usd %}
-                    — ${{ "{:,.0f}".format(policy.amount_usd) }} {{ policy.unit or '' }}
+                    n/a ${{ "{:,.0f}".format(policy.amount_usd) }} {{ policy.unit or '' }}
                 {% endif %}
                 {% if policy.notes %}
                     <br><small style="color: #94a3b8;">{{ policy.notes }}</small>
