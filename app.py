@@ -116,6 +116,14 @@ def parse_year_to_date(year_str: Optional[str]) -> Optional[date]:
         return None
 
 
+def dates_share_year(value: Optional[date], target: Optional[date]) -> bool:
+    if not target:
+        return True
+    if not value:
+        return False
+    return value.year == target.year
+
+
 def company_to_template_dict(company) -> Dict:
     name = company.company_name or company.company_id.replace('_', ' ').title()
     ticker = company.ticker or company.company_id[:4].upper()
@@ -212,7 +220,7 @@ def index():
         exec_records = league_manager.get_company_compensation(company.company_id, year_date)
         director_records = [
             record for record in league_manager.director_comp
-            if record.company_id == company.company_id and (not year_date or record.fiscal_year_end == year_date)
+            if record.company_id == company.company_id and dates_share_year(record.fiscal_year_end, year_date)
         ]
         ownership_records = [
             record for record in league_manager.beneficial_ownership
@@ -271,14 +279,17 @@ def index():
     exec_chart_labels = [row['company']['ticker'] or row['company']['name'] for row in company_rows[:8]]
     exec_chart_values = [round(row['executive_total'], 2) for row in company_rows[:8]]
 
-    spend_breakdown = {
-        'labels': ['Executive Payroll', 'Director Payroll'],
-        'values': [round(total_exec_spend, 2), round(total_director_spend, 2)]
+    top_for_mix = company_rows[:6]
+    pay_mix_chart = {
+        'labels': [row['company']['ticker'] or row['company']['name'] for row in top_for_mix],
+        'executive': [round(row['executive_total'], 2) for row in top_for_mix],
+        'director': [round(row['director_total'], 2) for row in top_for_mix],
     }
 
-    ownership_breakdown = {
-        'labels': ['Director Shares', 'Executive Shares'],
-        'values': [total_director_shares, total_exec_shares]
+    ownership_mix_chart = {
+        'labels': [row['company']['ticker'] or row['company']['name'] for row in top_for_mix],
+        'exec_shares': [row['ownership_exec_shares'] for row in top_for_mix],
+        'director_shares': [row['ownership_director_shares'] for row in top_for_mix],
     }
 
     exec_count_by_company = {row['company']['name']: row['executive_count'] for row in company_rows}
@@ -314,7 +325,7 @@ def index():
         [
             (record, league_manager.get_company(record.company_id), league_manager.get_person(record.person_id))
             for record in league_manager.executive_comp
-            if (not year_date or record.fiscal_year_end == year_date)
+            if dates_share_year(record.fiscal_year_end, year_date)
         ],
         key=lambda triple: triple[0].total_comp_usd,
         reverse=True
@@ -364,14 +375,14 @@ def index():
         summary_metrics=summary_metrics,
         exec_chart_labels=exec_chart_labels,
         exec_chart_values=exec_chart_values,
-        spend_breakdown=spend_breakdown,
-        ownership_breakdown=ownership_breakdown,
         top_paid_execs=top_paid_execs,
         top_exec_owners=top_exec_owners,
         top_director_owners=top_director_owners,
         exec_distribution=exec_distribution,
         director_spend_chart=director_spend_chart,
         ownership_density=ownership_density,
+        pay_mix_chart=pay_mix_chart,
+        ownership_mix_chart=ownership_mix_chart,
         selected_year=year,
         available_years=available_years,
     )
@@ -487,7 +498,7 @@ def company_detail(company_id):
     director_comp_records = [
         record
         for record in league_manager.director_comp
-        if record.company_id == company_id and (not year_date or record.fiscal_year_end == year_date)
+        if record.company_id == company_id and dates_share_year(record.fiscal_year_end, year_date)
     ]
     board_members = []
     for profile in board_profiles:
@@ -901,7 +912,7 @@ def person_api(person_id):
 
     year_date = parse_year_to_date(year)
     if year:
-        filtered = [r for r in records if r.fiscal_year_end == year_date]
+        filtered = [r for r in records if dates_share_year(r.fiscal_year_end, year_date)]
         person_data['year_data'] = {
             'year': year,
             'total_earnings': sum(r.total_comp_usd for r in filtered),

@@ -233,7 +233,11 @@ class LeagueManager:
     ) -> List[ExecutiveCompensation]:
         records = [r for r in self.executive_comp if r.person_id == person_id]
         if fiscal_year:
-            records = [r for r in records if r.fiscal_year_end == fiscal_year]
+            target_year = fiscal_year.year
+            records = [
+                r for r in records
+                if r.fiscal_year_end and r.fiscal_year_end.year == target_year
+            ]
         return sorted(records, key=lambda r: r.fiscal_year_end, reverse=True)
 
     def get_company_compensation(
@@ -243,7 +247,11 @@ class LeagueManager:
     ) -> List[ExecutiveCompensation]:
         records = [r for r in self.executive_comp if r.company_id == company_id]
         if fiscal_year:
-            records = [r for r in records if r.fiscal_year_end == fiscal_year]
+            target_year = fiscal_year.year
+            records = [
+                r for r in records
+                if r.fiscal_year_end and r.fiscal_year_end.year == target_year
+            ]
         return sorted(records, key=lambda r: r.total_comp_usd, reverse=True)
 
     def get_top_earners(
@@ -253,7 +261,11 @@ class LeagueManager:
     ) -> List[ExecutiveCompensation]:
         records = self.executive_comp
         if fiscal_year:
-            records = [r for r in records if r.fiscal_year_end == fiscal_year]
+            target_year = fiscal_year.year
+            records = [
+                r for r in records
+                if r.fiscal_year_end and r.fiscal_year_end.year == target_year
+            ]
         return sorted(records, key=lambda r: r.total_comp_usd, reverse=True)[:limit]
 
     def get_available_years(self) -> List[date]:
@@ -316,7 +328,11 @@ class LeagueManager:
     def get_league_statistics(self, fiscal_year: Optional[date] = None) -> Dict[str, float]:
         records = self.executive_comp
         if fiscal_year:
-            records = [r for r in records if r.fiscal_year_end == fiscal_year]
+            target_year = fiscal_year.year
+            records = [
+                r for r in records
+                if r.fiscal_year_end and r.fiscal_year_end.year == target_year
+            ]
 
         total_spent = sum(r.total_comp_usd for r in records)
         budgets = [

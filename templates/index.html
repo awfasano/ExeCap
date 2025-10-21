@@ -48,7 +48,7 @@
     </section>
 
     <div class="home-grid">
-        <section class="dashboard-card" style="grid-column: span 2;">
+        <section class="dashboard-card dashboard-card--wide">
             <h2>Compensation Pulse</h2>
             <p class="muted-text">Benchmark spend, headcount, and insider pressure</p>
             <div class="chart-tabs">
@@ -62,13 +62,19 @@
                     <canvas id="mainBarChart"></canvas>
                 </div>
                 <div class="chart-side">
-                    <canvas id="spendBreakdownChart"></canvas>
-                    <canvas id="ownershipChart"></canvas>
+                    <div class="chart-side-card">
+                        <h3 class="chart-side-title">Payroll Mix</h3>
+                        <canvas id="payMixChart"></canvas>
+                    </div>
+                    <div class="chart-side-card">
+                        <h3 class="chart-side-title">Insider Share Mix</h3>
+                        <canvas id="ownershipMixChart"></canvas>
+                    </div>
                 </div>
             </div>
         </section>
 
-        <section class="dashboard-card" style="grid-column: span 2;">
+        <section class="dashboard-card dashboard-card--wide">
             <h2>Company Salary Cap Table</h2>
             <p class="muted-text">Sorted by executive compensation for {{ selected_year }}</p>
             <div style="overflow-x: auto;">
@@ -162,15 +168,15 @@
     <script>
         const execLabels = {{ exec_chart_labels|tojson }};
         const execValues = {{ exec_chart_values|tojson }};
-        const spendBreakdown = {{ spend_breakdown|tojson }};
-        const ownershipBreakdown = {{ ownership_breakdown|tojson }};
         const execDistribution = {{ exec_distribution|tojson }};
         const directorSpendChart = {{ director_spend_chart|tojson }};
         const ownershipDensity = {{ ownership_density|tojson }};
+        const payMixChartData = {{ pay_mix_chart|tojson }};
+        const ownershipMixChartData = {{ ownership_mix_chart|tojson }};
 
         const mainCtx = document.getElementById('mainBarChart');
-        const spendCtx = document.getElementById('spendBreakdownChart');
-        const ownershipCtx = document.getElementById('ownershipChart');
+        const payMixCtx = document.getElementById('payMixChart');
+        const ownershipMixCtx = document.getElementById('ownershipMixChart');
 
         const formatCurrency = (value) => '$' + new Intl.NumberFormat().format(Math.round(value));
         const formatNumber = (value) => new Intl.NumberFormat().format(Math.round(value));
@@ -219,49 +225,6 @@
             }
         };
 
-        const doughnutOpts = {
-            responsive: true,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: { color: '#94a3b8' }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: (ctx) => ctx.label + ': ' + formatNumber(ctx.parsed)
-                    }
-                }
-            }
-        };
-
-        new Chart(spendCtx, {
-            type: 'doughnut',
-            data: {
-                labels: spendBreakdown.labels,
-                datasets: [{
-                    data: spendBreakdown.values,
-                    backgroundColor: ['rgba(244, 63, 94, 0.75)', 'rgba(59, 130, 246, 0.75)'],
-                    borderColor: ['rgba(244, 63, 94, 1)', 'rgba(59, 130, 246, 1)'],
-                    borderWidth: 1
-                }]
-            },
-            options: doughnutOpts
-        });
-
-        new Chart(ownershipCtx, {
-            type: 'doughnut',
-            data: {
-                labels: ownershipBreakdown.labels,
-                datasets: [{
-                    data: ownershipBreakdown.values,
-                    backgroundColor: ['rgba(251, 146, 60, 0.78)', 'rgba(14, 165, 233, 0.75)'],
-                    borderColor: ['rgba(251, 146, 60, 1)', 'rgba(14, 165, 233, 1)'],
-                    borderWidth: 1
-                }]
-            },
-            options: doughnutOpts
-        });
-
         const getBarOptions = (config) => ({
             responsive: true,
             plugins: {
@@ -281,6 +244,38 @@
                         callback: (value) => config.tickFormatter(value)
                     },
                     grid: { color: 'rgba(148, 163, 184, 0.15)' }
+                }
+            }
+        });
+
+        const getStackedBarOptions = (formatter) => ({
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: '#94a3b8', boxWidth: 14 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => `${ctx.dataset.label}: ${formatter(ctx.parsed.x)}`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    ticks: {
+                        color: '#94a3b8',
+                        callback: (value) => formatter(value)
+                    },
+                    grid: { color: 'rgba(148, 163, 184, 0.15)' }
+                },
+                y: {
+                    stacked: true,
+                    ticks: { color: '#94a3b8' },
+                    grid: { display: false }
                 }
             }
         });
@@ -315,6 +310,62 @@
             mainChart.options = getBarOptions(config);
             mainChart.update();
         };
+
+        if (payMixCtx) {
+            new Chart(payMixCtx, {
+                type: 'bar',
+                data: {
+                    labels: payMixChartData.labels,
+                    datasets: [
+                        {
+                            label: 'Exec Payroll',
+                            data: payMixChartData.executive,
+                            backgroundColor: 'rgba(244, 63, 94, 0.8)',
+                            borderColor: 'rgba(244, 63, 94, 1)',
+                            borderWidth: 1,
+                            borderRadius: 6
+                        },
+                        {
+                            label: 'Director Payroll',
+                            data: payMixChartData.director,
+                            backgroundColor: 'rgba(59, 130, 246, 0.75)',
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            borderWidth: 1,
+                            borderRadius: 6
+                        }
+                    ]
+                },
+                options: getStackedBarOptions(formatCurrency)
+            });
+        }
+
+        if (ownershipMixCtx) {
+            new Chart(ownershipMixCtx, {
+                type: 'bar',
+                data: {
+                    labels: ownershipMixChartData.labels,
+                    datasets: [
+                        {
+                            label: 'Exec Shares',
+                            data: ownershipMixChartData.exec_shares,
+                            backgroundColor: 'rgba(14, 165, 233, 0.75)',
+                            borderColor: 'rgba(14, 165, 233, 1)',
+                            borderWidth: 1,
+                            borderRadius: 6
+                        },
+                        {
+                            label: 'Director Shares',
+                            data: ownershipMixChartData.director_shares,
+                            backgroundColor: 'rgba(251, 146, 60, 0.78)',
+                            borderColor: 'rgba(251, 146, 60, 1)',
+                            borderWidth: 1,
+                            borderRadius: 6
+                        }
+                    ]
+                },
+                options: getStackedBarOptions(formatShares)
+            });
+        }
 
         document.querySelectorAll('.chart-tab').forEach((btn) => {
             btn.addEventListener('click', () => {

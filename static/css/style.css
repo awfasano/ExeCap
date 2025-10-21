@@ -203,6 +203,10 @@ nav a:hover {
     gap: 2rem;
 }
 
+.dashboard-card--wide {
+    grid-column: 1 / -1;
+}
+
 .dashboard-card {
     background: linear-gradient(135deg, var(--panel), rgba(19, 14, 10, 0.92));
     border: 1px solid var(--border-soft);
@@ -349,7 +353,7 @@ table tbody tr:hover {
 
 .chart-layout {
     display: grid;
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
     gap: 2rem;
     min-height: 320px;
 }
@@ -361,7 +365,7 @@ table tbody tr:hover {
 
 .chart-shell {
     position: relative;
-    height: 320px;
+    height: 360px;
     width: 100%;
 }
 
@@ -370,9 +374,27 @@ table tbody tr:hover {
     height: 100% !important;
 }
 
-#spendBreakdownChart,
-#ownershipChart {
-    min-height: 150px;
+.chart-side-card {
+    background: rgba(17, 13, 10, 0.85);
+    border: 1px solid rgba(140, 51, 39, 0.35);
+    border-radius: 16px;
+    padding: 1.1rem 1.3rem 1.3rem;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+    display: grid;
+    gap: 0.75rem;
+}
+
+.chart-side-title {
+    margin: 0;
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+}
+
+.chart-side-card canvas {
+    width: 100% !important;
+    height: 180px !important;
 }
 
 /* Team detail layout */
@@ -510,7 +532,15 @@ table tbody tr:hover {
     }
 
     .chart-side {
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
+    }
+
+    .chart-shell {
+        height: 300px;
+    }
+
+    .chart-side-card canvas {
+        height: 200px !important;
     }
 
     table {
