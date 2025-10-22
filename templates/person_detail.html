@@ -74,6 +74,46 @@
         </div>
     </section>
 
+    {% if selected_year != 'career' %}
+    <section class="team-card profile-season-card">
+        <header class="team-card-header">
+            <span class="icon">&#127942;</span>
+            <div>
+                <h3>{{ season_stats.year_label }} Season Snapshot</h3>
+                <p>Compensation awarded during the selected season</p>
+            </div>
+        </header>
+        <div class="profile-season-grid">
+            <div class="profile-season-stat">
+                <span class="meta-label">Total Compensation</span>
+                <span class="meta-value">${{ "{:,.0f}".format(season_stats.total) }}</span>
+            </div>
+            <div class="profile-season-stat">
+                <span class="meta-label">Average Per Role</span>
+                <span class="meta-value">
+                    {% if season_stats.records %}
+                        ${{ "{:,.0f}".format(season_stats.avg_total) }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </span>
+            </div>
+            <div class="profile-season-stat">
+                <span class="meta-label">Salary</span>
+                <span class="meta-value">${{ "{:,.0f}".format(season_stats.salary) }}</span>
+            </div>
+            <div class="profile-season-stat">
+                <span class="meta-label">Stock Awards</span>
+                <span class="meta-value">${{ "{:,.0f}".format(season_stats.stock) }}</span>
+            </div>
+            <div class="profile-season-stat">
+                <span class="meta-label">Performance Bonus</span>
+                <span class="meta-value">${{ "{:,.0f}".format(season_stats.bonus) }}</span>
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
     <section class="team-card chart-card profile-chart-card">
         <header class="team-card-header">
             <span class="icon">&#128200;</span>
@@ -103,6 +143,7 @@
                         <th>Company</th>
                         <th>Position</th>
                         <th>Type</th>
+                        <th>Season</th>
                         <th>Year</th>
                         <th>Contract Length</th>
                         <th>Base Salary</th>
@@ -114,7 +155,7 @@
                 </thead>
                 <tbody>
                     {% for role in roles %}
-                    <tr>
+                    <tr class="{% if role.is_focus_year %}role-row--focus{% endif %}">
                         <td>
                             <a href="{{ url_for('company_detail', company_id=role.company_id) }}">
                                 <strong>{{ role.company_name }}</strong><br>
@@ -125,7 +166,17 @@
                         <td>
                             <span class="position-badge {% if role.position_type == 'Board' %}board-badge{% endif %}">
                                 {{ role.position_type }}
+                                {% if role.is_focus_year %}
+                                    <span class="profile-chip">Selected</span>
+                                {% endif %}
                             </span>
+                        </td>
+                        <td>
+                            {% if role.is_focus_year %}
+                                <span class="profile-chip profile-chip--focus">{{ selected_year }}</span>
+                            {% else %}
+                                <span class="muted-small">Career</span>
+                            {% endif %}
                         </td>
                         <td>{{ role.year }}</td>
                         <td>

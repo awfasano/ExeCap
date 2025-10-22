@@ -434,6 +434,40 @@ table tbody tr:hover {
     font-size: 0.95rem;
 }
 
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.4rem;
+    margin-bottom: 2.4rem;
+}
+
+.metric-card {
+    background: rgba(12, 18, 26, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 16px;
+    padding: 1.2rem;
+    box-shadow: 0 20px 38px rgba(9, 11, 15, 0.5);
+    display: grid;
+    gap: 0.6rem;
+}
+
+.metric-label {
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.metric-value {
+    font-size: 1.35rem;
+    font-weight: 600;
+    color: var(--highlight);
+}
+
+.metric-context {
+    line-height: 1.4;
+}
+
 .profile-header {
     display: grid;
     grid-template-columns: auto 1fr auto;
@@ -586,6 +620,25 @@ table tbody tr:hover {
     margin-bottom: 2.4rem;
 }
 
+.profile-season-card {
+    margin-bottom: 2.4rem;
+}
+
+.profile-season-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1.2rem;
+}
+
+.profile-season-stat {
+    background: rgba(12, 17, 25, 0.7);
+    border: 1px solid rgba(56, 189, 248, 0.18);
+    border-radius: 12px;
+    padding: 0.9rem 1rem;
+    display: grid;
+    gap: 0.35rem;
+}
+
 .profile-dual-panels {
     margin-top: 2.4rem;
     display: grid;
@@ -606,6 +659,30 @@ table tbody tr:hover {
     border-radius: 10px;
     padding: 0.6rem 0.75rem;
     border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.profile-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: rgba(9, 9, 11, 0.75);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    border-radius: 999px;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #60a5fa;
+    margin-left: 0.4rem;
+}
+
+.profile-chip--focus {
+    border-color: rgba(244, 63, 94, 0.5);
+    color: #f43f5e;
+}
+
+.role-row--focus {
+    background: rgba(244, 63, 94, 0.08);
 }
 
 /* Team detail layout */
@@ -774,6 +851,14 @@ table tbody tr:hover {
 
     .profile-stats-grid {
         grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+
+    .profile-season-grid {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+
+    .metrics-grid {
+        grid-template-columns: 1fr;
     }
 
     table {

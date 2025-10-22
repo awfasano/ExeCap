@@ -558,6 +558,16 @@ def company_detail(company_id):
     director_count = len({record.person_id for record in director_comp_records})
     director_avg_total = (director_total / director_count) if director_count else 0
 
+    revenue = company_dict['revenue'] or 0
+    market_cap = company_dict['market_cap'] or 0
+    exec_to_revenue_pct = (exec_total / revenue * 100) if revenue else None
+    director_to_revenue_pct = (director_total / revenue * 100) if revenue else None
+    total_pay = exec_total + director_total
+    total_to_revenue_pct = (total_pay / revenue * 100) if revenue else None
+    revenue_per_exec = (revenue / exec_count) if exec_count and revenue else None
+    comp_per_exec = (exec_total / exec_count) if exec_count else None
+    market_cap_to_pay = (market_cap / total_pay) if total_pay else None
+
     raw_ownership_records = [
         record for record in league_manager.beneficial_ownership
         if record.company_id == company_id
@@ -586,10 +596,12 @@ def company_detail(company_id):
             'notes': record.notes,
         })
 
+    total_insider_shares = director_shares + exec_shares
+
     ownership_summary = {
         'director_shares': director_shares,
         'exec_shares': exec_shares,
-        'total_shares': director_shares + exec_shares,
+        'total_shares': total_insider_shares,
         'as_of': max(as_of_dates).isoformat() if as_of_dates else '—'
     }
 
@@ -601,6 +613,14 @@ def company_detail(company_id):
         'director_total': director_total,
         'director_avg_total': director_avg_total,
         'director_count': director_count,
+        'revenue': revenue,
+        'market_cap': market_cap,
+        'exec_to_revenue_pct': exec_to_revenue_pct,
+        'director_to_revenue_pct': director_to_revenue_pct,
+        'total_to_revenue_pct': total_to_revenue_pct,
+        'revenue_per_exec': revenue_per_exec,
+        'comp_per_exec': comp_per_exec,
+        'market_cap_to_pay': market_cap_to_pay,
     }
 
     comp_mix_chart = {
@@ -608,9 +628,17 @@ def company_detail(company_id):
         'values': [round(exec_total, 2), round(director_total, 2)],
     }
 
+    if total_insider_shares:
+        exec_pct = (exec_shares / total_insider_shares) * 100
+        director_pct = (director_shares / total_insider_shares) * 100
+    else:
+        exec_pct = director_pct = 0.0
+
     ownership_mix_chart = {
         'labels': ['Executive Insiders', 'Board Insiders'],
-        'values': [exec_shares, director_shares],
+        'values': [round(exec_pct, 2), round(director_pct, 2)],
+        'shares': [exec_shares, director_shares],
+        'total_shares': total_insider_shares,
     }
 
     top_owner_rows = sorted(
@@ -675,8 +703,9 @@ def person_detail(person_id):
         compensation_records = all_records
         year_date = None
 
+    focus_year = year_date.year if year_date else None
     person_roles = []
-    for record in compensation_records:
+    for record in sorted(all_records, key=lambda rec: rec.fiscal_year_end, reverse=True):
         company = league_manager.get_company(record.company_id)
         person_roles.append({
             'company_id': record.company_id,
@@ -691,10 +720,9 @@ def person_detail(person_id):
             'stock_awards': record.stock_awards_usd,
             'signing_bonus': record.all_other_comp_usd,
             'share_count': None,
-            'total_compensation': record.total_comp_usd
+            'total_compensation': record.total_comp_usd,
+            'is_focus_year': (focus_year is not None and record.fiscal_year_end.year == focus_year),
         })
-
-    person_roles.sort(key=lambda item: item['year'], reverse=True)
 
     total_earnings = sum(rec.total_comp_usd for rec in all_records)
     years_active = len({rec.fiscal_year_end.year for rec in all_records})
@@ -735,12 +763,28 @@ def person_detail(person_id):
         'total': [rec.total_comp_usd for rec in history_records],
     }
 
+    season_records = compensation_records if year_date else all_records
+    season_year_label = str(year_date.year) if year_date else 'Career'
+    season_stats = {
+        'year_label': season_year_label,
+        'total': sum(rec.total_comp_usd for rec in season_records),
+        'avg_total': (
+            sum(rec.total_comp_usd for rec in season_records) / len(season_records)
+            if season_records else 0
+        ),
+        'salary': sum(rec.salary_usd for rec in season_records),
+        'bonus': sum(rec.bonus_usd for rec in season_records),
+        'stock': sum(rec.stock_awards_usd for rec in season_records),
+        'records': len(season_records),
+    }
+
     return render_template(
         'person_detail.html',
         person=person_dict,
         roles=person_roles,
         career_stats=career_stats,
         compensation_history_chart=compensation_history_chart,
+        season_stats=season_stats,
         selected_year=year if year_date else 'career',
         available_years=person_years,
     )

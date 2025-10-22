@@ -148,6 +148,69 @@
         </div>
     </section>
 
+    <section class="metrics-grid">
+        <div class="metric-card">
+            <span class="metric-label">Revenue</span>
+            <span class="metric-value">
+                {% if company_summary.revenue %}
+                    ${{ "{:,.0f}".format(company_summary.revenue) }}
+                {% else %}
+                    n/a
+                {% endif %}
+            </span>
+            <span class="metric-context muted-small">Reported for fiscal year end {{ company.fiscal_year_end.strftime('%Y-%m-%d') }}</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Exec Payroll / Revenue</span>
+            <span class="metric-value">
+                {% if company_summary.exec_to_revenue_pct is not none %}
+                    {{ "{:.2f}".format(company_summary.exec_to_revenue_pct) }}%
+                {% else %}
+                    n/a
+                {% endif %}
+            </span>
+            <span class="metric-context muted-small">Executive spend relative to company revenue</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Total Payroll / Revenue</span>
+            <span class="metric-value">
+                {% if company_summary.total_to_revenue_pct is not none %}
+                    {{ "{:.2f}".format(company_summary.total_to_revenue_pct) }}%
+                {% else %}
+                    n/a
+                {% endif %}
+            </span>
+            <span class="metric-context muted-small">Executives + directors vs. revenue</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Revenue per Exec</span>
+            <span class="metric-value">
+                {% if company_summary.revenue_per_exec %}
+                    ${{ "{:,.0f}".format(company_summary.revenue_per_exec) }}
+                {% else %}
+                    n/a
+                {% endif %}
+            </span>
+            <span class="metric-context muted-small">{{ company_summary.exec_count }} named execs</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Avg Exec Compensation</span>
+            <span class="metric-value">${{ "{:,.0f}".format(company_summary.comp_per_exec or 0) }}</span>
+            <span class="metric-context muted-small">Mean total compensation</span>
+        </div>
+        <div class="metric-card">
+            <span class="metric-label">Market Cap / Total Pay</span>
+            <span class="metric-value">
+                {% if company_summary.market_cap_to_pay %}
+                    {{ "{:,.1f}".format(company_summary.market_cap_to_pay) }}×
+                {% else %}
+                    n/a
+                {% endif %}
+            </span>
+            <span class="metric-context muted-small">How many times payroll fits into market cap</span>
+        </div>
+    </section>
+
     <section class="insights-grid">
         <div class="team-card chart-card">
             <header class="team-card-header">
@@ -176,13 +239,15 @@
                     <p>Executive vs. board voting power</p>
                 </div>
             </header>
-            <div class="chart-shell chart-shell--compact">
-                <canvas id="ownershipMixChart"></canvas>
-            </div>
-            <div class="chart-footnote">
-                <span class="muted-small">As of {{ ownership_summary.as_of }}</span>
-            </div>
+        <div class="chart-shell chart-shell--compact">
+            <canvas id="ownershipMixChart"></canvas>
         </div>
+        <div class="chart-footnote">
+            <span class="muted-small">Total Insider Shares</span>
+            <strong>{{ "{:,.0f}".format(ownership_summary.total_shares) }}</strong>
+            <span class="muted-small">As of {{ ownership_summary.as_of }}</span>
+        </div>
+    </div>
 
         <div class="team-card chart-card">
             <header class="team-card-header">
@@ -522,12 +587,40 @@
         }
 
         if (ownershipMixData.values.some(value => value)) {
-            createDoughnut(
-                'ownershipMixChart',
-                ownershipMixData.labels,
-                ownershipMixData.values,
-                ['rgba(14, 165, 233, 0.8)', 'rgba(251, 191, 36, 0.8)']
-            );
+            const ownershipCtx = document.getElementById('ownershipMixChart');
+            if (ownershipCtx) {
+                new Chart(ownershipCtx.getContext('2d'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: ownershipMixData.labels,
+                        datasets: [{
+                            data: ownershipMixData.values,
+                            backgroundColor: ['rgba(14, 165, 233, 0.85)', 'rgba(251, 191, 36, 0.85)'],
+                            borderColor: ['rgba(14, 165, 233, 1)', 'rgba(251, 191, 36, 1)'],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: { color: '#cbd5f5' }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => {
+                                        const pct = (ctx.parsed ?? 0).toFixed(1);
+                                        const raw = ownershipMixData.shares?.[ctx.dataIndex] ?? 0;
+                                        return `${ctx.label}: ${pct}% (${raw.toLocaleString()} sh)`;
+                                    }
+                                }
+                            }
+                        },
+                        cutout: '55%'
+                    }
+                });
+            }
         }
 
         const topOwnersCanvas = document.getElementById('topOwnersChart');
