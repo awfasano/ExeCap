@@ -1,6 +1,7 @@
 # app.py - Complete version with year-based data structure support
 import json
 import os
+from collections import defaultdict
 from datetime import date
 from typing import Dict, List, Optional, Set
 
@@ -461,7 +462,11 @@ def company_detail(company_id):
     else:
         cap_info['exec_percent_revenue'] = 0
 
-    compensation_records = league_manager.get_company_compensation(company_id, year_date)
+    all_compensation_records = league_manager.get_company_compensation(company_id)
+    compensation_records = (
+        league_manager.get_company_compensation(company_id, year_date)
+        if year_date else all_compensation_records
+    )
 
     c_suite = []
     exec_total = 0
@@ -495,10 +500,13 @@ def company_detail(company_id):
             exec_experience_values.append(person.years_experience)
 
     board_profiles = league_manager.get_director_profiles_for_company(company_id)
+    all_director_records = [
+        record for record in league_manager.director_comp if record.company_id == company_id
+    ]
     director_comp_records = [
         record
-        for record in league_manager.director_comp
-        if record.company_id == company_id and dates_share_year(record.fiscal_year_end, year_date)
+        for record in all_director_records
+        if dates_share_year(record.fiscal_year_end, year_date)
     ]
     board_members = []
     for profile in board_profiles:
@@ -548,7 +556,11 @@ def company_detail(company_id):
     chart_labels = [item['name'] for item in c_suite]
     chart_data = [item['total_compensation'] for item in c_suite]
 
-    company_years = {record.fiscal_year_end.year for record in league_manager.get_company_compensation(company_id)}
+    company_years = {
+        record.fiscal_year_end.year
+        for record in all_compensation_records
+        if record.fiscal_year_end
+    }
     available_company_years = sorted({str(yr) for yr in company_years}, reverse=True)
 
     exec_avg_comp = (exec_total / exec_count) if exec_count else 0
@@ -567,6 +579,49 @@ def company_detail(company_id):
     revenue_per_exec = (revenue / exec_count) if exec_count and revenue else None
     comp_per_exec = (exec_total / exec_count) if exec_count else None
     market_cap_to_pay = (market_cap / total_pay) if total_pay else None
+
+    exec_totals_by_year = defaultdict(float)
+    for record in all_compensation_records:
+        if record.fiscal_year_end:
+            exec_totals_by_year[record.fiscal_year_end.year] += record.total_comp_usd
+
+    director_totals_by_year = defaultdict(float)
+    for record in all_director_records:
+        if record.fiscal_year_end:
+            director_totals_by_year[record.fiscal_year_end.year] += record.total_usd
+
+    timeline_years = sorted(set(exec_totals_by_year.keys()) | set(director_totals_by_year.keys()))
+    if not timeline_years and year_date:
+        timeline_years = [year_date.year]
+
+    ts_labels: List[str] = []
+    exec_series: List[float] = []
+    director_series: List[float] = []
+    combined_series: List[float] = []
+    budget_series: List[float] = []
+    utilization_series: List[float] = []
+
+    for yr in timeline_years:
+        ts_labels.append(str(yr))
+        exec_value = round(exec_totals_by_year.get(yr, 0.0), 2)
+        director_value = round(director_totals_by_year.get(yr, 0.0), 2)
+        exec_series.append(exec_value)
+        director_series.append(director_value)
+        combined_series.append(round(exec_value + director_value, 2))
+        snapshot = league_manager.get_company_cap_snapshot(company_id, date(yr, 12, 31))
+        budget_value = ((snapshot or {}).get('budget') or 0.0)
+        utilization_value = ((snapshot or {}).get('utilization_pct') or 0.0)
+        budget_series.append(round(budget_value, 2))
+        utilization_series.append(round(utilization_value, 2))
+
+    compensation_time_series = {
+        'labels': ts_labels,
+        'exec_totals': exec_series,
+        'director_totals': director_series,
+        'combined_totals': combined_series,
+        'budget': budget_series,
+        'utilization_pct': utilization_series,
+    }
 
     raw_ownership_records = [
         record for record in league_manager.beneficial_ownership
@@ -674,6 +729,7 @@ def company_detail(company_id):
         comp_mix_chart=comp_mix_chart,
         ownership_mix_chart=ownership_mix_chart,
         top_owner_chart=top_owner_chart,
+        compensation_time_series=compensation_time_series,
         selected_year=year,
         available_years=available_company_years or available_years,
     )

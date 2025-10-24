@@ -221,7 +221,7 @@
                 </div>
             </header>
             <div class="chart-shell chart-shell--compact">
-                <canvas id="compMixChart"></canvas>
+                <div id="compMixChart" class="radial-chart"></div>
             </div>
             <div class="chart-footnote">
                 <span class="muted-small">Exec Payroll</span>
@@ -240,7 +240,7 @@
                 </div>
             </header>
         <div class="chart-shell chart-shell--compact">
-            <canvas id="ownershipMixChart"></canvas>
+            <div id="ownershipMixChart" class="radial-chart"></div>
         </div>
         <div class="chart-footnote">
             <span class="muted-small">Total Insider Shares</span>
@@ -261,6 +261,22 @@
                 <canvas id="topOwnersChart"></canvas>
             </div>
         </div>
+    </section>
+
+    <section class="team-card full chart-card">
+        <header class="team-card-header">
+            <span class="icon">&#128200;</span>
+            <div>
+                <h3>Compensation Timeline</h3>
+                <p>Exec + board outlay compared to budget across filings</p>
+            </div>
+        </header>
+        <div class="chart-shell">
+            <div id="compTimelineChart" class="timeline-chart"></div>
+        </div>
+        <p class="muted-small" style="margin-top: -0.5rem;">
+            Filled area is total compensation; solid lines reflect exec/director splits, dashed line is the reported cap budget.
+        </p>
     </section>
 
     {% if ownership_rows %}
@@ -482,146 +498,380 @@
         const compMixData = {{ comp_mix_chart|tojson }};
         const ownershipMixData = {{ ownership_mix_chart|tojson }};
         const topOwnerChartData = {{ top_owner_chart|tojson }};
+        const timeSeriesData = {{ compensation_time_series|tojson }};
 
-        const ctx = document.getElementById('compensationChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: execBarLabels,
-                datasets: [{
-                    label: 'Total Compensation (USD)',
-                    data: execBarValues,
-                    backgroundColor: 'rgba(244, 63, 94, 0.78)',
-                    borderColor: 'rgba(244, 63, 94, 1)',
-                    borderWidth: 1.5,
-                    borderRadius: 5,
-                    borderSkipped: false
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        labels: {
-                            color: '#e2e8f0'
-                        }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(30, 41, 59, 0.9)',
-                        titleColor: '#f1f5f9',
-                        bodyColor: '#e2e8f0',
-                        borderColor: 'rgba(16, 185, 129, 1)',
-                        borderWidth: 1,
-                        callbacks: {
-                            label: function(context) {
-                                return 'Total Compensation: $' + context.parsed.y.toLocaleString();
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        ticks: {
-                            color: '#94a3b8'
-                        },
-                        grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
-                        }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            color: '#94a3b8',
-                            callback: function(value) {
-                                return '$' + (value / 1000000).toFixed(1) + 'M';
-                            }
-                        },
-                        grid: {
-                            color: 'rgba(148, 163, 184, 0.1)'
-                        }
-                    }
-                }
-            }
-        });
-
-        const createDoughnut = (canvasId, labels, values, colors) => {
-            const canvas = document.getElementById(canvasId);
-            if (!canvas) return null;
-            return new Chart(canvas.getContext('2d'), {
-                type: 'doughnut',
+        const compensationCanvas = document.getElementById('compensationChart');
+        if (compensationCanvas) {
+            new Chart(compensationCanvas.getContext('2d'), {
+                type: 'bar',
                 data: {
-                    labels,
+                    labels: execBarLabels,
                     datasets: [{
-                        data: values,
-                        backgroundColor: colors,
-                        borderColor: colors.map(color => color.replace('0.8', '1').replace('0.75', '1')),
-                        borderWidth: 1
+                        label: 'Total Compensation (USD)',
+                        data: execBarValues,
+                        backgroundColor: 'rgba(244, 63, 94, 0.78)',
+                        borderColor: 'rgba(244, 63, 94, 1)',
+                        borderWidth: 1.5,
+                        borderRadius: 5,
+                        borderSkipped: false
                     }]
                 },
                 options: {
                     responsive: true,
+                    maintainAspectRatio: false,
                     plugins: {
                         legend: {
-                            position: 'bottom',
-                            labels: { color: '#cbd5f5' }
+                            labels: {
+                                color: '#e2e8f0'
+                            }
                         },
                         tooltip: {
+                            backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                            titleColor: '#f1f5f9',
+                            bodyColor: '#e2e8f0',
+                            borderColor: 'rgba(16, 185, 129, 1)',
+                            borderWidth: 1,
                             callbacks: {
-                                label: (context) => `${context.label}: ${context.parsed.toLocaleString()}`
+                                label: function(context) {
+                                    return 'Total Compensation: $' + context.parsed.y.toLocaleString();
+                                }
                             }
                         }
                     },
-                    cutout: '55%'
-                }
-            });
-        };
-
-        if (compMixData.values.some(value => value)) {
-            createDoughnut(
-                'compMixChart',
-                compMixData.labels,
-                compMixData.values,
-                ['rgba(244, 63, 94, 0.8)', 'rgba(59, 130, 246, 0.8)']
-            );
-        }
-
-        if (ownershipMixData.values.some(value => value)) {
-            const ownershipCtx = document.getElementById('ownershipMixChart');
-            if (ownershipCtx) {
-                new Chart(ownershipCtx.getContext('2d'), {
-                    type: 'doughnut',
-                    data: {
-                        labels: ownershipMixData.labels,
-                        datasets: [{
-                            data: ownershipMixData.values,
-                            backgroundColor: ['rgba(14, 165, 233, 0.85)', 'rgba(251, 191, 36, 0.85)'],
-                            borderColor: ['rgba(14, 165, 233, 1)', 'rgba(251, 191, 36, 1)'],
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            legend: {
-                                position: 'bottom',
-                                labels: { color: '#cbd5f5' }
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: '#94a3b8'
                             },
-                            tooltip: {
-                                callbacks: {
-                                    label: (ctx) => {
-                                        const pct = (ctx.parsed ?? 0).toFixed(1);
-                                        const raw = ownershipMixData.shares?.[ctx.dataIndex] ?? 0;
-                                        return `${ctx.label}: ${pct}% (${raw.toLocaleString()} sh)`;
-                                    }
-                                }
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
                             }
                         },
-                        cutout: '55%'
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: '#94a3b8',
+                                callback: function(value) {
+                                    return '$' + (value / 1000000).toFixed(1) + 'M';
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(148, 163, 184, 0.1)'
+                            }
+                        }
                     }
-                });
-            }
+                }
+            });
         }
+
+        const formatCurrency = (value) => {
+            if (!value) {
+                return '$0';
+            }
+            const abs = Math.abs(value);
+            if (abs >= 1_000_000_000) {
+                return '$' + (value / 1_000_000_000).toFixed(1) + 'B';
+            }
+            if (abs >= 1_000_000) {
+                return '$' + (value / 1_000_000).toFixed(1) + 'M';
+            }
+            return '$' + value.toLocaleString();
+        };
+
+        const formatCurrencyShort = (value) => {
+            if (!value) return '$0';
+            const abs = Math.abs(value);
+            if (abs >= 1_000_000_000) {
+                return '$' + (value / 1_000_000_000).toFixed(1) + 'B';
+            }
+            return '$' + (value / 1_000_000).toFixed(abs >= 100_000_000 ? 0 : 1) + 'M';
+        };
+
+        const renderRadialChart = (containerId, dataset, options = {}) => {
+            const target = document.getElementById(containerId);
+            if (!target) return;
+            target.innerHTML = '';
+
+            const values = dataset?.values || [];
+            if (!values.some(value => Number(value) > 0)) {
+                target.innerHTML = '<p class="chart-empty muted-small">Not enough data to display.</p>';
+                return;
+            }
+
+            const size = options.size || 240;
+            const radius = size / 2;
+            const thickness = options.thickness || 32;
+            const colors = options.colors || ['#f43f5e', '#2563eb', '#0ea5e9'];
+
+            const slices = (dataset.labels || []).map((label, index) => ({
+                label,
+                value: Number(values[index] || 0),
+                detail: dataset.shares ? dataset.shares[index] : undefined,
+                index
+            }));
+
+            const total = d3.sum(slices, slice => slice.value);
+            const svg = d3.select(target)
+                .append('svg')
+                .attr('viewBox', `0 0 ${size} ${size}`)
+                .attr('preserveAspectRatio', 'xMidYMid meet');
+
+            const group = svg.append('g')
+                .attr('transform', `translate(${radius}, ${radius})`);
+
+            const pie = d3.pie()
+                .value(d => d.value)
+                .sort(null);
+
+            const arc = d3.arc()
+                .innerRadius(radius - thickness)
+                .outerRadius(radius);
+
+            group.selectAll('path')
+                .data(pie(slices))
+                .enter()
+                .append('path')
+                .attr('d', arc)
+                .attr('fill', (_, index) => colors[index % colors.length])
+                .attr('stroke', '#0b0906')
+                .attr('stroke-width', 2)
+                .attr('opacity', 0.95);
+
+            const centerText = options.centerText
+                ? options.centerText(slices, total)
+                : {
+                    primary: total ? `${Math.round((slices[0].value / total) * 100)}%` : '0%',
+                    secondary: slices[0]?.label || '',
+                    tertiary: formatCurrency(slices[0]?.value || 0)
+                };
+
+            const centerLines = [
+                { value: centerText.primary, className: 'radial-center-value' },
+                { value: centerText.secondary, className: 'radial-center-label' },
+                { value: centerText.tertiary, className: 'radial-center-subtle' },
+            ].filter(line => line.value);
+
+            const centerGroup = group.append('g').attr('class', 'radial-center');
+            const lineSpacing = 18;
+            const startY = -((centerLines.length - 1) * lineSpacing) / 2;
+            centerLines.forEach((line, idx) => {
+                centerGroup.append('text')
+                    .attr('text-anchor', 'middle')
+                    .attr('class', line.className)
+                    .attr('y', startY + idx * lineSpacing)
+                    .text(line.value);
+            });
+
+            const legendFormatter = options.legendFormatter || ((slice, totalValue) => {
+                const pct = totalValue ? (slice.value / totalValue) * 100 : 0;
+                return `${slice.label}: ${pct.toFixed(1)}% • ${formatCurrency(slice.value)}`;
+            });
+
+            const legend = d3.select(target)
+                .append('div')
+                .attr('class', 'radial-legend');
+
+            const legendItems = legend.selectAll('div')
+                .data(slices)
+                .enter()
+                .append('div')
+                .attr('class', 'radial-legend-item');
+
+            legendItems.append('span')
+                .attr('class', 'radial-legend-swatch')
+                .style('background', (_, idx) => colors[idx % colors.length]);
+
+            legendItems.append('span')
+                .attr('class', 'radial-legend-text')
+                .text(slice => legendFormatter(slice, total));
+        };
+
+        const renderTimeSeries = (containerId, dataset) => {
+            const target = document.getElementById(containerId);
+            if (!target) return;
+            target.innerHTML = '';
+
+            if (!dataset?.labels || !dataset.labels.length) {
+                target.innerHTML = '<p class="chart-empty muted-small">Waiting on historical filings.</p>';
+                return;
+            }
+
+            const points = dataset.labels.map((label, index) => ({
+                year: label,
+                exec: Number(dataset.exec_totals?.[index] || 0),
+                director: Number(dataset.director_totals?.[index] || 0),
+                combined: Number(dataset.combined_totals?.[index] || 0),
+                budget: Number(dataset.budget?.[index] || 0)
+            }));
+
+            const viewWidth = 760;
+            const viewHeight = 360;
+            const margin = { top: 20, right: 24, bottom: 44, left: 70 };
+            const width = viewWidth - margin.left - margin.right;
+            const height = viewHeight - margin.top - margin.bottom;
+
+            const svg = d3.select(target)
+                .append('svg')
+                .attr('viewBox', `0 0 ${viewWidth} ${viewHeight}`)
+                .attr('preserveAspectRatio', 'xMidYMid meet');
+
+            const plot = svg.append('g')
+                .attr('transform', `translate(${margin.left}, ${margin.top})`);
+
+            const x = d3.scalePoint()
+                .domain(points.map(point => point.year))
+                .range([0, width])
+                .padding(0.5);
+
+            const yMax = d3.max(points, point => Math.max(point.combined, point.budget)) || 0;
+            const y = d3.scaleLinear()
+                .domain([0, yMax ? yMax * 1.1 : 1])
+                .range([height, 0]);
+
+            plot.append('g')
+                .attr('class', 'timeline-grid')
+                .call(d3.axisLeft(y).tickSize(-width).tickFormat(''))
+                .call(g => g.select('.domain').remove());
+
+            plot.append('g')
+                .attr('class', 'timeline-axis')
+                .call(d3.axisLeft(y).tickFormat(value => formatCurrencyShort(value)));
+
+            plot.append('g')
+                .attr('class', 'timeline-axis')
+                .attr('transform', `translate(0, ${height})`)
+                .call(d3.axisBottom(x));
+
+            const area = d3.area()
+                .x(point => x(point.year))
+                .y0(y(0))
+                .y1(point => y(point.combined))
+                .curve(d3.curveMonotoneX);
+
+            plot.append('path')
+                .datum(points)
+                .attr('fill', 'rgba(250, 204, 21, 0.12)')
+                .attr('stroke', 'none')
+                .attr('d', area);
+
+            const lineGenerator = (accessor) => d3.line()
+                .x(point => x(point.year))
+                .y(point => y(accessor(point)))
+                .curve(d3.curveMonotoneX);
+
+            plot.append('path')
+                .datum(points)
+                .attr('fill', 'none')
+                .attr('stroke', '#fbbf24')
+                .attr('stroke-width', 2)
+                .attr('stroke-dasharray', '6,4')
+                .attr('opacity', 0.9)
+                .attr('d', lineGenerator(point => point.budget));
+
+            plot.append('path')
+                .datum(points)
+                .attr('fill', 'none')
+                .attr('stroke', '#f43f5e')
+                .attr('stroke-width', 2.2)
+                .attr('d', lineGenerator(point => point.exec));
+
+            plot.append('path')
+                .datum(points)
+                .attr('fill', 'none')
+                .attr('stroke', '#38bdf8')
+                .attr('stroke-width', 2.2)
+                .attr('d', lineGenerator(point => point.director));
+
+            const execAccessor = (point) => point.exec;
+            const directorAccessor = (point) => point.director;
+            const budgetAccessor = (point) => point.budget;
+
+            const dotMaker = (accessor, color, label) => {
+                plot.selectAll(`.timeline-dot-${label}`)
+                    .data(points)
+                    .enter()
+                    .append('circle')
+                    .attr('class', `timeline-dot timeline-dot-${label}`)
+                    .attr('cx', point => x(point.year))
+                    .attr('cy', point => y(accessor(point)))
+                    .attr('r', 3)
+                    .attr('fill', color)
+                    .append('title')
+                    .text(point => `${point.year}: ${formatCurrency(accessor(point))}`);
+            };
+
+            dotMaker(execAccessor, '#f43f5e', 'exec');
+            dotMaker(directorAccessor, '#38bdf8', 'director');
+            dotMaker(budgetAccessor, '#fbbf24', 'budget');
+
+            const legend = d3.select(target)
+                .append('div')
+                .attr('class', 'timeline-legend');
+
+            const legendItems = [
+                { label: 'Exec Payroll', color: '#f43f5e' },
+                { label: 'Director Payroll', color: '#38bdf8' },
+                { label: 'Cap Budget', color: '#fbbf24', dashed: true }
+            ];
+
+            const legendBlocks = legend.selectAll('div')
+                .data(legendItems)
+                .enter()
+                .append('div')
+                .attr('class', 'timeline-legend-item');
+
+            legendBlocks.append('span')
+                .attr('class', 'timeline-legend-swatch')
+                .style('background', item => item.dashed ? 'transparent' : item.color)
+                .style('border-color', item => item.dashed ? item.color : 'transparent')
+                .style('border-style', item => item.dashed ? 'dashed' : 'solid');
+
+            legendBlocks.append('span')
+                .text(item => item.label);
+        };
+
+        if (compMixData?.values?.some(value => Number(value) > 0)) {
+            renderRadialChart('compMixChart', compMixData, {
+                colors: ['#f43f5e', '#2563eb'],
+                ariaLabel: 'Executive versus board payroll split',
+                centerText: (slices, total) => {
+                    const primary = slices[0];
+                    const pct = total ? Math.round((primary.value / total) * 100) : 0;
+                    return {
+                        primary: `${pct}%`,
+                        secondary: primary.label,
+                        tertiary: formatCurrency(primary.value)
+                    };
+                }
+            });
+        } else {
+            renderRadialChart('compMixChart', { labels: [], values: [] });
+        }
+
+        if (ownershipMixData?.values?.some(value => Number(value) > 0)) {
+            renderRadialChart('ownershipMixChart', ownershipMixData, {
+                colors: ['#0ea5e9', '#fbbf24'],
+                ariaLabel: 'Executive versus board insider ownership',
+                centerText: () => {
+                    const pct = ownershipMixData.values?.[0] ?? 0;
+                    const shares = ownershipMixData.shares?.[0];
+                    return {
+                        primary: `${pct.toFixed(1)}%`,
+                        secondary: ownershipMixData.labels?.[0] || 'Exec insiders',
+                        tertiary: shares ? `${shares.toLocaleString()} sh` : ''
+                    };
+                },
+                legendFormatter: (slice) => {
+                    const shareCount = slice.detail;
+                    const shareText = shareCount ? ` • ${shareCount.toLocaleString()} sh` : '';
+                    return `${slice.label}: ${slice.value.toFixed(1)}%${shareText}`;
+                }
+            });
+        } else {
+            renderRadialChart('ownershipMixChart', { labels: [], values: [] });
+        }
+
+        renderTimeSeries('compTimelineChart', timeSeriesData);
 
         const topOwnersCanvas = document.getElementById('topOwnersChart');
         if (topOwnersCanvas && topOwnerChartData.labels.length) {
